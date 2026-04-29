@@ -1,0 +1,8 @@
+# テキストファイルの改行コードを LF に統一（Windows/Mac/Linux 共通）
+* text=auto eol=lf
+
+# バイナリファイルは変換しない
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
