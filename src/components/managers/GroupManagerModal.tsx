@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { X, ChevronLeft, ChevronUp, ChevronDown, Pencil, Users, Check } from 'lucide-react'
 import { cn, PRESET_COLORS } from '@/lib/utils'
 import type { GroupManager } from '@/lib/types'
@@ -64,14 +64,35 @@ export function GroupManagerModal({
   onMoveUp,
   onMoveDown,
 }: GroupManagerModalProps) {
+  // ── すべての Hook を if (!isOpen) return より前に宣言 ─────────────
   const [panel, setPanel] = useState<Panel>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ManagerInput>(EMPTY_FORM)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // isOpen が閉じるときにパネルをリストに戻す
+  useEffect(() => {
+    if (!isOpen) {
+      setPanel('list')
+      setError('')
+    }
+  }, [isOpen])
+
+  const backToList = useCallback(() => {
+    setPanel('list')
+    setError('')
+  }, [])
+
+  const handleToggleActive = useCallback(async (id: string) => {
+    await onToggleActive(id)
+    backToList()
+  }, [onToggleActive, backToList])
+
+  // ── 早期リターン（全 Hook 宣言後に置く） ────────────────────────
   if (!isOpen) return null
 
+  // ── 以降は Hook を呼ばない通常の処理 ────────────────────────────
   const activeManagers = managers.filter(m => m.active)
   const inactiveManagers = managers.filter(m => !m.active)
 
@@ -87,11 +108,6 @@ export function GroupManagerModal({
     setForm({ name: m.name, color: m.color, memo: m.memo })
     setError('')
     setPanel('form')
-  }
-
-  const backToList = () => {
-    setPanel('list')
-    setError('')
   }
 
   const handleSave = async () => {
@@ -114,11 +130,6 @@ export function GroupManagerModal({
       setSaving(false)
     }
   }
-
-  const handleToggleActive = useCallback(async (id: string) => {
-    await onToggleActive(id)
-    backToList()
-  }, [onToggleActive])
 
   const set = (key: keyof ManagerInput, val: string) => {
     setForm(prev => ({ ...prev, [key]: val }))
