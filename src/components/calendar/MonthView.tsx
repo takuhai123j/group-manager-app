@@ -39,7 +39,7 @@ export function MonthView({ currentDate, events, managers, managerFacilities, co
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col md:h-full">
       <div className="grid grid-cols-7 border-b bg-gray-50">
         {DAY_HEADERS.map((day, i) => (
           <div key={day} className={cn(
@@ -49,7 +49,7 @@ export function MonthView({ currentDate, events, managers, managerFacilities, co
         ))}
       </div>
 
-      <div className="flex-1 grid grid-cols-7 grid-rows-6 border-l">
+      <div className="grid grid-cols-7 md:flex-1 md:grid-rows-6 border-l">
         {days.map(day => {
           const { allDay, timed, total } = getEventsForDay(day)
           const isToday = isTodayDate(day)

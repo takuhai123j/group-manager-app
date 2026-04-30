@@ -35,7 +35,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
   const hasAnyAllDay = weekDays.some(d => getAllDayEvents(d).length > 0)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col md:h-full md:overflow-hidden">
       {/* Day headers */}
       <div className="flex border-b bg-gray-50 flex-shrink-0">
         <div className="w-14 sm:w-16 flex-shrink-0" />
@@ -108,7 +108,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
       )}
 
       {/* Time grid */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 md:overflow-y-auto">
         <div className="flex">
           {/* Time labels */}
           <div className="w-14 sm:w-16 flex-shrink-0 relative">

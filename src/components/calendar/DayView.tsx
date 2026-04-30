@@ -33,7 +33,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
   const isRedDay = isSun || !!holidayName
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col md:h-full md:overflow-hidden">
       {/* Day header */}
       <div className="flex-shrink-0 border-b bg-gray-50 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -87,7 +87,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
       )}
 
       {/* Time grid */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 md:overflow-y-auto">
         <div className="flex">
           {/* Time labels */}
           <div className="w-16 flex-shrink-0">
