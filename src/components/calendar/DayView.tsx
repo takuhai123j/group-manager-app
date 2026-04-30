@@ -3,6 +3,7 @@
 import {
   cn, formatJa, toDateString, generateTimeSlots, getEventPosition,
   isTodayDate, isSaturday, isSunday, getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
+  computeEventColumns,
 } from '@/lib/utils'
 import { getHolidayName } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
@@ -22,9 +23,7 @@ const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 export function DayView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: DayViewProps) {
   const allEvents = events.filter(e => e.date === toDateString(currentDate))
   const allDayEvents = allEvents.filter(e => e.isAllDay)
-  const timedEvents = allEvents
-    .filter(e => !e.isAllDay)
-    .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+  const positionedEvents = computeEventColumns(allEvents.filter(e => !e.isAllDay))
 
   const isToday = isTodayDate(currentDate)
   const isSat = isSaturday(currentDate)
@@ -114,10 +113,13 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
               />
             ))}
 
-            {timedEvents.map(event => {
+            {positionedEvents.map(event => {
               const { top, height } = getEventPosition(event.startTime, event.endTime)
               const typeConfig = getEventTypeConfig(event.type)
               const manager = managers.find(m => m.id === event.groupLeaderId)
+
+              const colW = 100 / event.columnCount
+              const colL = event.columnIndex * colW
 
               const cardStyle = colorMode === 'leader'
                 ? {
@@ -134,9 +136,15 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
                 <button
                   key={event.id}
                   onClick={e => { e.stopPropagation(); onEventClick(event) }}
-                  style={{ top, height, ...(cardStyle ?? {}) }}
+                  style={{
+                    top,
+                    height,
+                    left: `calc(${colL}% + 1px)`,
+                    width: `calc(${colW}% - 2px)`,
+                    ...(cardStyle ?? {}),
+                  }}
                   className={cn(
-                    'absolute left-1 right-1 rounded-lg border overflow-hidden text-left px-3 py-1.5',
+                    'absolute rounded-lg border overflow-hidden text-left px-2 py-1',
                     'hover:brightness-95 transition-all z-10 shadow-sm',
                     cardClass
                   )}
@@ -144,29 +152,35 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
                   {/* Title + type badge */}
                   <div className="flex items-start justify-between gap-1">
                     <p className="text-sm font-semibold truncate leading-snug">{event.title}</p>
-                    <span className={cn(
-                      'text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 border',
-                      typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor
-                    )}>{typeConfig.label}</span>
+                    {event.columnCount === 1 && (
+                      <span className={cn(
+                        'text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 border',
+                        typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor
+                      )}>{typeConfig.label}</span>
+                    )}
                   </div>
                   {/* Time */}
-                  <p className="text-xs opacity-80 mt-0.5">{event.startTime} 〜 {event.endTime}</p>
-                  {/* Facility */}
-                  {height >= 60 && event.facilityName && (
-                    <p className="text-xs opacity-70 mt-0.5">📍 {event.facilityName}</p>
-                  )}
+                  <p className="text-xs opacity-80 mt-0.5">{event.startTime}〜{event.endTime}</p>
                   {/* Group leader */}
-                  {height >= 76 && (
+                  {height >= 44 && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <span
                         className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ backgroundColor: manager?.color ?? '#6B7280' }}
                       />
-                      <p className="text-xs opacity-70">{event.groupLeaderName}</p>
+                      <p className="text-xs opacity-70 truncate">{event.groupLeaderName}</p>
                     </div>
                   )}
+                  {/* Facility */}
+                  {height >= 60 && event.facilityName && (
+                    <p className="text-xs opacity-70 mt-0.5 truncate">📍 {event.facilityName}</p>
+                  )}
+                  {/* Type label (multi-column時) */}
+                  {height >= 76 && event.columnCount > 1 && (
+                    <p className="text-xs opacity-50 mt-0.5 truncate">[{typeConfig.label}]</p>
+                  )}
                   {/* Memo */}
-                  {height >= 100 && event.memo && (
+                  {height >= 100 && event.columnCount === 1 && event.memo && (
                     <p className="text-xs opacity-55 mt-0.5 truncate">📝 {event.memo}</p>
                   )}
                 </button>

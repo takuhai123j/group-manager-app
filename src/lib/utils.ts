@@ -109,6 +109,57 @@ export function addDaysToDate(date: Date, days: number): Date {
   return addDays(date, days)
 }
 
+// ── Overlap column layout for timed events ─────────────────────────────────
+// Assigns columnIndex / columnCount to events so overlapping events render
+// side-by-side instead of stacked on top of each other.
+
+export function computeEventColumns<T extends { startTime: string; endTime: string }>(
+  events: T[]
+): Array<T & { columnIndex: number; columnCount: number }> {
+  if (events.length === 0) return []
+
+  // Sort by start time; break ties by putting longer events first
+  const sorted = [...events].sort((a, b) => {
+    const s = a.startTime.localeCompare(b.startTime)
+    return s !== 0 ? s : b.endTime.localeCompare(a.endTime)
+  })
+
+  // Greedy column assignment: place each event in the first column whose
+  // current end-time is <= this event's start-time
+  const colEndTimes: string[] = []
+  const colIndices: number[] = []
+
+  for (const event of sorted) {
+    let col = 0
+    while (col < colEndTimes.length && colEndTimes[col] > event.startTime) col++
+    colIndices.push(col)
+    colEndTimes[col] = event.endTime
+    if (col >= colEndTimes.length - 1 && colEndTimes.length <= col) {
+      colEndTimes.push(event.endTime)
+    }
+  }
+
+  // Build result with initial columnCount = 1
+  const result = sorted.map((event, i) => ({
+    ...event,
+    columnIndex: colIndices[i],
+    columnCount: 1,
+  }))
+
+  // For each event, columnCount = 1 + max columnIndex among all overlapping events
+  for (let i = 0; i < result.length; i++) {
+    let maxCol = result[i].columnIndex
+    for (let j = 0; j < result.length; j++) {
+      if (i !== j && result[i].startTime < result[j].endTime && result[j].startTime < result[i].endTime) {
+        if (result[j].columnIndex > maxCol) maxCol = result[j].columnIndex
+      }
+    }
+    result[i].columnCount = maxCol + 1
+  }
+
+  return result
+}
+
 // ── Dynamic color utilities for GroupManager ────────────────────────────────
 
 export function hexToRgb(hex: string): [number, number, number] {

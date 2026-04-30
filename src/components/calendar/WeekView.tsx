@@ -4,6 +4,7 @@ import {
   cn, formatJa, toDateString, getWeekDays, generateTimeSlots,
   getEventPosition, isTodayDate, isSaturday, isSunday,
   getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
+  computeEventColumns,
 } from '@/lib/utils'
 import { getJapaneseHolidays } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
@@ -121,7 +122,7 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
 
           {/* Day columns */}
           {weekDays.map(day => {
-            const dayEvents = getTimedEvents(day)
+            const positionedEvents = computeEventColumns(getTimedEvents(day))
             return (
               <div key={toDateString(day)} className="flex-1 min-w-0 relative border-l">
                 {TIME_LABELS.map(slot => (
@@ -136,10 +137,13 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
                   />
                 ))}
 
-                {dayEvents.map(event => {
+                {positionedEvents.map(event => {
                   const { top, height } = getEventPosition(event.startTime, event.endTime)
                   const typeConfig = getEventTypeConfig(event.type)
                   const manager = managers.find(m => m.id === event.groupLeaderId)
+
+                  const colW = 100 / event.columnCount
+                  const colL = event.columnIndex * colW
 
                   const cardStyle = colorMode === 'leader'
                     ? {
@@ -156,9 +160,15 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
                     <button
                       key={event.id}
                       onClick={e => { e.stopPropagation(); onEventClick(event) }}
-                      style={{ top, height, ...(cardStyle ?? {}) }}
+                      style={{
+                        top,
+                        height,
+                        left: `calc(${colL}% + 1px)`,
+                        width: `calc(${colW}% - 2px)`,
+                        ...(cardStyle ?? {}),
+                      }}
                       className={cn(
-                        'absolute left-0.5 right-0.5 rounded border overflow-hidden text-left px-1 py-0.5',
+                        'absolute rounded border overflow-hidden text-left px-1 py-0.5',
                         'hover:brightness-95 transition-all z-10',
                         cardClass
                       )}
@@ -167,13 +177,13 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
                       <p className="text-xs opacity-70 truncate leading-tight">
                         {event.startTime}〜{event.endTime}
                       </p>
+                      {height >= 44 && (
+                        <p className="text-xs opacity-70 truncate leading-tight">{event.groupLeaderName}</p>
+                      )}
                       {height >= 60 && event.facilityName && (
                         <p className="text-xs opacity-60 truncate leading-tight">{event.facilityName}</p>
                       )}
-                      {height >= 76 && colorMode === 'leader' && (
-                        <p className="text-xs opacity-60 truncate leading-tight">{event.groupLeaderName}</p>
-                      )}
-                      {height >= 92 && (
+                      {height >= 76 && (
                         <p className="text-xs opacity-50 truncate leading-tight">[{typeConfig.label}]</p>
                       )}
                     </button>
