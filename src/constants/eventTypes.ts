@@ -50,11 +50,11 @@ export const EVENT_TYPES: EventTypeConfig[] = [
   {
     value: 'mt',
     label: 'MT',
-    bgColor: 'bg-sky-100',
-    textColor: 'text-sky-800',
-    borderColor: 'border-sky-300',
-    dotColor: 'bg-sky-500',
-    solidBg: '#0EA5E9',
+    bgColor: 'bg-rose-100',
+    textColor: 'text-rose-800',
+    borderColor: 'border-rose-300',
+    dotColor: 'bg-rose-500',
+    solidBg: '#F43F5E',
   },
   {
     value: 'vacancy',
