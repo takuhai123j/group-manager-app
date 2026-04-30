@@ -1,13 +1,15 @@
 export type EventType =
-  | 'patrol'    // 巡回
-  | 'meeting'   // 会議
-  | 'interview' // 面談
-  | 'vacancy'   // 欠員対応
-  | 'office'    // 事務作業
-  | 'trouble'   // トラブル対応
-  | 'kyukyu'    // 公休（全日）
-  | 'yukyu'     // 有休（全日）
-  | 'other'     // その他
+  | 'patrol'        // 巡回
+  | 'meeting'       // 会議
+  | 'interview'     // 面談
+  | 'job_interview' // 面接
+  | 'mt'            // MT（ミーティング）
+  | 'vacancy'       // 欠員対応
+  | 'office'        // 事務作業
+  | 'trouble'       // トラブル対応
+  | 'kyukyu'        // 公休（全日）
+  | 'yukyu'         // 有休（全日）
+  | 'other'         // その他
 
 export type CalendarView = 'month' | 'week' | 'day'
 
