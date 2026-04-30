@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS facilities (
 -- Schedules（スケジュール）
 -- group_manager_id: G長への外部キー（必須）
 -- facility_id: 施設への外部キー（任意、NULLで未設定）
+-- is_all_day: 全日予定フラグ（公休・有休など時間指定なし）
 CREATE TABLE IF NOT EXISTS schedules (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   group_manager_id UUID        NOT NULL REFERENCES group_managers(id),
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   end_time         TEXT        NOT NULL,
   type             TEXT        NOT NULL DEFAULT 'other',
   memo             TEXT        NOT NULL DEFAULT '',
+  is_all_day       BOOLEAN     NOT NULL DEFAULT FALSE,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -137,6 +139,12 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- -------------------------------------------------------
+-- 既存DBへの is_all_day カラム追加（初回 schema.sql 実行済み環境用）
+-- Supabase Dashboard > SQL Editor で実行してください
+-- -------------------------------------------------------
+ALTER TABLE schedules ADD COLUMN IF NOT EXISTS is_all_day BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）

@@ -20,8 +20,10 @@ interface DayViewProps {
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 
 export function DayView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: DayViewProps) {
-  const dayEvents = events
-    .filter(e => e.date === toDateString(currentDate))
+  const allEvents = events.filter(e => e.date === toDateString(currentDate))
+  const allDayEvents = allEvents.filter(e => e.isAllDay)
+  const timedEvents = allEvents
+    .filter(e => !e.isAllDay)
     .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
 
   const isToday = isTodayDate(currentDate)
@@ -50,9 +52,39 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
               {holidayName && <span className="ml-2 text-red-500 font-medium">{holidayName}</span>}
             </p>
           </div>
-          <div className="ml-auto text-sm text-gray-500">{dayEvents.length}件の予定</div>
+          <div className="ml-auto text-sm text-gray-500">{allEvents.length}件の予定</div>
         </div>
       </div>
+
+      {/* All-day events section */}
+      {allDayEvents.length > 0 && (
+        <div className="flex-shrink-0 border-b bg-white px-4 py-2 space-y-1.5">
+          <p className="text-xs text-gray-400 font-medium mb-1">終日</p>
+          {allDayEvents.map(event => {
+            const typeConfig = getEventTypeConfig(event.type)
+            const manager = managers.find(m => m.id === event.groupLeaderId)
+            const cardStyle = colorMode === 'leader'
+              ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
+              : undefined
+            const cardClass = colorMode === 'type'
+              ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor, 'border')
+              : undefined
+            return (
+              <button
+                key={event.id}
+                onClick={e => { e.stopPropagation(); onEventClick(event) }}
+                style={cardStyle}
+                className={cn(
+                  'w-full text-left rounded-lg px-3 py-2 text-sm font-medium hover:brightness-95 transition-all',
+                  cardClass
+                )}
+              >
+                {typeConfig.label}｜{event.groupLeaderName}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Time grid */}
       <div className="flex-1 overflow-y-auto">
@@ -82,7 +114,7 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
               />
             ))}
 
-            {dayEvents.map(event => {
+            {timedEvents.map(event => {
               const { top, height } = getEventPosition(event.startTime, event.endTime)
               const typeConfig = getEventTypeConfig(event.type)
               const manager = managers.find(m => m.id === event.groupLeaderId)
@@ -144,7 +176,7 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
         </div>
       </div>
 
-      {dayEvents.length === 0 && (
+      {allEvents.length === 0 && (
         <div className="flex-shrink-0 text-center py-6 text-gray-400 text-sm">
           この日の予定はありません
         </div>

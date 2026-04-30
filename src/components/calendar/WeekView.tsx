@@ -23,7 +23,14 @@ const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 export function WeekView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: WeekViewProps) {
   const weekDays = getWeekDays(currentDate)
   const holidayMap = getJapaneseHolidays(weekDays[0], weekDays[weekDays.length - 1])
-  const getEventsForDay = (date: Date) => events.filter(e => e.date === toDateString(date))
+
+  const getTimedEvents = (date: Date) =>
+    events.filter(e => e.date === toDateString(date) && !e.isAllDay)
+
+  const getAllDayEvents = (date: Date) =>
+    events.filter(e => e.date === toDateString(date) && e.isAllDay)
+
+  const hasAnyAllDay = weekDays.some(d => getAllDayEvents(d).length > 0)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -58,6 +65,46 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
         })}
       </div>
 
+      {/* All-day events row */}
+      {hasAnyAllDay && (
+        <div className="flex border-b bg-white flex-shrink-0">
+          <div className="w-14 sm:w-16 flex-shrink-0 flex items-center justify-center py-1">
+            <span className="text-xs text-gray-400 leading-tight">終日</span>
+          </div>
+          {weekDays.map(day => {
+            const allDayEvents = getAllDayEvents(day)
+            return (
+              <div key={toDateString(day)} className="flex-1 min-w-0 border-l px-0.5 py-0.5 space-y-0.5">
+                {allDayEvents.map(event => {
+                  const typeConfig = getEventTypeConfig(event.type)
+                  const manager = managers.find(m => m.id === event.groupLeaderId)
+                  const cardStyle = colorMode === 'leader'
+                    ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
+                    : undefined
+                  const cardClass = colorMode === 'type'
+                    ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor, 'border')
+                    : undefined
+
+                  return (
+                    <button
+                      key={event.id}
+                      onClick={e => { e.stopPropagation(); onEventClick(event) }}
+                      style={cardStyle}
+                      className={cn(
+                        'w-full text-left rounded px-1 py-0.5 text-xs truncate hover:brightness-95 transition-all',
+                        cardClass
+                      )}
+                    >
+                      {event.title}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Time grid */}
       <div className="flex-1 overflow-y-auto">
         <div className="flex">
@@ -74,7 +121,7 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
 
           {/* Day columns */}
           {weekDays.map(day => {
-            const dayEvents = getEventsForDay(day)
+            const dayEvents = getTimedEvents(day)
             return (
               <div key={toDateString(day)} className="flex-1 min-w-0 relative border-l">
                 {TIME_LABELS.map(slot => (

@@ -13,8 +13,10 @@ interface EventBadgeProps {
 }
 
 export function EventBadge({ event, managers, onClick, compact = false, colorMode = 'type' }: EventBadgeProps) {
+  const config = getEventTypeConfig(event.type)
+  const manager = managers.find(m => m.id === event.groupLeaderId)
+
   if (colorMode === 'leader') {
-    const manager = managers.find(m => m.id === event.groupLeaderId)
     const style = getManagerColorStyle(manager?.color ?? '#6B7280')
     return (
       <button
@@ -25,14 +27,12 @@ export function EventBadge({ event, managers, onClick, compact = false, colorMod
           compact ? 'text-xs px-1 py-0.5' : 'text-xs px-1.5 py-1'
         )}
       >
-        <span className="font-medium">{event.startTime}</span>
-        {' '}
+        {!event.isAllDay && <span className="font-medium">{event.startTime} </span>}
         <span>{event.title}</span>
       </button>
     )
   }
 
-  const config = getEventTypeConfig(event.type)
   return (
     <button
       onClick={onClick}
@@ -42,8 +42,7 @@ export function EventBadge({ event, managers, onClick, compact = false, colorMod
         compact ? 'text-xs px-1 py-0.5' : 'text-xs px-1.5 py-1'
       )}
     >
-      <span className="font-medium">{event.startTime}</span>
-      {' '}
+      {!event.isAllDay && <span className="font-medium">{event.startTime} </span>}
       <span>{event.title}</span>
     </button>
   )

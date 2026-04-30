@@ -1,17 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Trash2, Save, Building2 } from 'lucide-react'
+import { X, Trash2, Save, Building2, CalendarDays } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString } from '@/lib/utils'
-import { EVENT_TYPES } from '@/constants/eventTypes'
+import { EVENT_TYPES, isAllDayType } from '@/constants/eventTypes'
 import type { ScheduleEvent, CreateEventInput, EventType, GroupManager, Facility } from '@/lib/types'
 
 interface EventModalProps {
   isOpen: boolean
   initialDate?: Date
   editingEvent?: ScheduleEvent | null
-  facilities: Facility[]      // active のみ（新規予定の選択肢）
-  allFacilities: Facility[]   // 無効化済み含む全施設（既存予定表示用）
+  facilities: Facility[]
+  allFacilities: Facility[]
   activeManagers: GroupManager[]
   allManagers: GroupManager[]
   preselectedLeaderId?: string
@@ -26,7 +26,7 @@ interface FormState {
   date: string
   startTime: string
   endTime: string
-  facilityId: string   // 空文字 = 施設未設定
+  facilityId: string
   type: EventType
   memo: string
   groupLeaderId: string
@@ -64,6 +64,8 @@ export function EventModal({
   const [deleting, setDeleting] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
 
+  const isAllDay = isAllDayType(form.type)
+
   useEffect(() => {
     if (!isOpen) return
     if (editingEvent) {
@@ -87,9 +89,11 @@ export function EventModal({
     const e: Partial<Record<keyof FormState, string>> = {}
     if (!form.title.trim()) e.title = 'タイトルを入力してください'
     if (!form.date) e.date = '日付を選択してください'
-    if (!form.startTime) e.startTime = '開始時間を選択してください'
-    if (!form.endTime) e.endTime = '終了時間を選択してください'
-    if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
+    if (!isAllDay) {
+      if (!form.startTime) e.startTime = '開始時間を選択してください'
+      if (!form.endTime) e.endTime = '終了時間を選択してください'
+      if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
+    }
     if (!form.groupLeaderId) e.groupLeaderId = '担当G長を選択してください'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -102,10 +106,11 @@ export function EventModal({
       await onSave({
         title: form.title.trim(),
         date: form.date,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        facilityId: form.facilityId || null,
+        startTime: isAllDay ? '00:00' : form.startTime,
+        endTime: isAllDay ? '00:00' : form.endTime,
+        facilityId: isAllDay ? null : (form.facilityId || null),
         type: form.type,
+        isAllDay,
         memo: form.memo.trim(),
         groupLeaderId: form.groupLeaderId,
       })
@@ -114,7 +119,7 @@ export function EventModal({
       setSaving(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, onSave, onClose])
+  }, [form, isAllDay, onSave, onClose])
 
   const handleDelete = useCallback(async () => {
     if (!editingEvent || !onDelete) return
@@ -129,14 +134,26 @@ export function EventModal({
     setErrors(prev => ({ ...prev, [key]: undefined }))
   }
 
+  // 種別変更：全日予定に切り替わる際はタイトルを自動入力
+  const handleTypeChange = (type: EventType) => {
+    const newConfig = EVENT_TYPES.find(t => t.value === type)
+    const currentAllDayLabels = EVENT_TYPES.filter(t => isAllDayType(t.value)).map(t => t.label)
+    const shouldAutoFill = isAllDayType(type) &&
+      (form.title === '' || currentAllDayLabels.includes(form.title))
+    setForm(prev => ({
+      ...prev,
+      type,
+      title: shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title,
+    }))
+    setErrors(prev => ({ ...prev, type: undefined, title: undefined }))
+  }
+
   if (!isOpen) return null
 
-  // 編集中の予定で無効化された施設が選択されている場合、オプションに追加
   const extraFacility = editingEvent?.facilityId
     ? allFacilities.find(f => f.id === editingEvent.facilityId && !f.active)
     : null
 
-  // 編集中の予定で無効化されたG長が選択されている場合、選択肢に追加
   const extraManager = editingEvent
     ? allManagers.find(m => m.id === editingEvent.groupLeaderId && !m.active)
     : null
@@ -189,10 +206,7 @@ export function EventModal({
                       color: '#1e293b',
                     } : undefined}
                   >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: m.color }}
-                    />
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
                     <span className="truncate">{m.name}</span>
                     {!m.active && <span className="text-xs text-gray-400 ml-auto">(無効)</span>}
                   </button>
@@ -232,7 +246,7 @@ export function EventModal({
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => set('type', t.value)}
+                  onClick={() => handleTypeChange(t.value)}
                   className={cn(
                     'px-3 py-2 text-sm rounded-lg border transition-colors text-left',
                     form.type === t.value
@@ -242,6 +256,9 @@ export function EventModal({
                 >
                   <span className={cn('inline-block w-2 h-2 rounded-full mr-2', t.dotColor)} />
                   {t.label}
+                  {isAllDayType(t.value) && (
+                    <span className="ml-1 text-xs opacity-60">（全日）</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -264,69 +281,78 @@ export function EventModal({
             {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
           </div>
 
-          {/* Time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                開始時間 <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={form.startTime}
-                onChange={e => set('startTime', e.target.value)}
-                className={cn(
-                  'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
-                  errors.startTime ? 'border-red-400' : 'border-gray-300'
-                )}
-              >
-                {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              {errors.startTime && <p className="mt-1 text-xs text-red-500">{errors.startTime}</p>}
+          {/* Time (timed events only) / All-day indicator */}
+          {isAllDay ? (
+            <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-600">
+              <CalendarDays size={16} className="flex-shrink-0 text-slate-400" />
+              <span className="font-medium">全日予定（時間指定なし）</span>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                終了時間 <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={form.endTime}
-                onChange={e => set('endTime', e.target.value)}
-                className={cn(
-                  'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
-                  errors.endTime ? 'border-red-400' : 'border-gray-300'
-                )}
-              >
-                {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              {errors.endTime && <p className="mt-1 text-xs text-red-500">{errors.endTime}</p>}
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  開始時間 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.startTime}
+                  onChange={e => set('startTime', e.target.value)}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
+                    errors.startTime ? 'border-red-400' : 'border-gray-300'
+                  )}
+                >
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {errors.startTime && <p className="mt-1 text-xs text-red-500">{errors.startTime}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  終了時間 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.endTime}
+                  onChange={e => set('endTime', e.target.value)}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
+                    errors.endTime ? 'border-red-400' : 'border-gray-300'
+                  )}
+                >
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {errors.endTime && <p className="mt-1 text-xs text-red-500">{errors.endTime}</p>}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Facility */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">施設名</label>
-              {onOpenFacilityManager && (
-                <button type="button" onClick={onOpenFacilityManager}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-                  <Building2 size={12} />施設を管理
-                </button>
-              )}
+          {/* Facility (timed events only) */}
+          {!isAllDay && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">施設名</label>
+                {onOpenFacilityManager && (
+                  <button type="button" onClick={onOpenFacilityManager}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                    <Building2 size={12} />施設を管理
+                  </button>
+                )}
+              </div>
+              <select
+                value={form.facilityId}
+                onChange={e => set('facilityId', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">（未設定）</option>
+                {facilities.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+                {extraFacility && (
+                  <option value={extraFacility.id}>
+                    {extraFacility.name}（無効化済み）
+                  </option>
+                )}
+              </select>
             </div>
-            <select
-              value={form.facilityId}
-              onChange={e => set('facilityId', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="">（未設定）</option>
-              {facilities.map(f => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-              {extraFacility && (
-                <option value={extraFacility.id}>
-                  {extraFacility.name}（無効化済み）
-                </option>
-              )}
-            </select>
-          </div>
+          )}
 
           {/* Memo */}
           <div>

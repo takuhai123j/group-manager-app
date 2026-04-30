@@ -66,6 +66,24 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     solidBg: '#F97316',
   },
   {
+    value: 'kyukyu',
+    label: '公休',
+    bgColor: 'bg-slate-100',
+    textColor: 'text-slate-700',
+    borderColor: 'border-slate-300',
+    dotColor: 'bg-slate-500',
+    solidBg: '#64748B',
+  },
+  {
+    value: 'yukyu',
+    label: '有休',
+    bgColor: 'bg-teal-100',
+    textColor: 'text-teal-800',
+    borderColor: 'border-teal-300',
+    dotColor: 'bg-teal-500',
+    solidBg: '#14B8A6',
+  },
+  {
     value: 'other',
     label: 'その他',
     bgColor: 'bg-yellow-100',
@@ -78,4 +96,12 @@ export const EVENT_TYPES: EventTypeConfig[] = [
 
 export const getEventTypeConfig = (type: EventType): EventTypeConfig => {
   return EVENT_TYPES.find(t => t.value === type) ?? EVENT_TYPES[EVENT_TYPES.length - 1]
+}
+
+/** 全日予定として扱う種別の一覧。将来「研修」などを追加する場合はここに加える */
+export const ALL_DAY_EVENT_TYPES: EventType[] = ['kyukyu', 'yukyu']
+
+/** 指定種別が全日予定かどうかを返す */
+export function isAllDayType(type: EventType): boolean {
+  return ALL_DAY_EVENT_TYPES.includes(type)
 }

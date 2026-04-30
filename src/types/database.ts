@@ -77,6 +77,7 @@ export type Database = {
           facility_id: string | null
           group_manager_id: string
           id: string
+          is_all_day: boolean
           memo: string
           start_time: string
           title: string
@@ -90,6 +91,7 @@ export type Database = {
           facility_id?: string | null
           group_manager_id: string
           id?: string
+          is_all_day?: boolean
           memo?: string
           start_time: string
           title: string
@@ -102,6 +104,7 @@ export type Database = {
           facility_id?: string | null
           group_manager_id?: string
           id?: string
+          is_all_day?: boolean
           memo?: string
           start_time?: string
           title?: string

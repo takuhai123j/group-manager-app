@@ -12,6 +12,7 @@ const SELECT_WITH_JOINS = `
   start_time,
   end_time,
   type,
+  is_all_day,
   memo,
   created_at,
   updated_at,
@@ -29,6 +30,7 @@ type ScheduleRow = {
   start_time: string
   end_time: string
   type: string
+  is_all_day: boolean
   memo: string
   created_at: string
   updated_at: string
@@ -46,6 +48,7 @@ function toScheduleEvent(row: ScheduleRow): ScheduleEvent {
     facilityId: row.facility_id ?? null,
     facilityName: row.facilities?.name ?? '',
     type: (row.type as EventType) ?? 'other',
+    isAllDay: row.is_all_day ?? false,
     memo: row.memo ?? '',
     groupLeaderId: row.group_manager_id ?? '',
     groupLeaderName: row.group_managers?.name ?? '',
@@ -72,12 +75,13 @@ export const scheduleService = {
       .from('schedules')
       .insert({
         group_manager_id: input.groupLeaderId,
-        facility_id: input.facilityId,
+        facility_id: input.isAllDay ? null : input.facilityId,
         title: input.title,
         date: input.date,
-        start_time: input.startTime,
-        end_time: input.endTime,
+        start_time: input.isAllDay ? '00:00' : input.startTime,
+        end_time: input.isAllDay ? '00:00' : input.endTime,
         type: input.type,
+        is_all_day: input.isAllDay,
         memo: input.memo,
       })
       .select(SELECT_WITH_JOINS)
@@ -89,12 +93,14 @@ export const scheduleService = {
   async update(id: string, input: UpdateEventInput): Promise<ScheduleEvent> {
     const supabase = createClient()
     const patch: Database['public']['Tables']['schedules']['Update'] = {}
+    const allDay = input.isAllDay ?? false
     if (input.title !== undefined)        patch.title            = input.title
     if (input.date !== undefined)         patch.date             = input.date
-    if (input.startTime !== undefined)    patch.start_time       = input.startTime
-    if (input.endTime !== undefined)      patch.end_time         = input.endTime
-    if (input.facilityId !== undefined)   patch.facility_id      = input.facilityId
+    if (input.startTime !== undefined)    patch.start_time       = allDay ? '00:00' : input.startTime
+    if (input.endTime !== undefined)      patch.end_time         = allDay ? '00:00' : input.endTime
+    if (input.facilityId !== undefined)   patch.facility_id      = allDay ? null : input.facilityId
     if (input.type !== undefined)         patch.type             = input.type
+    if (input.isAllDay !== undefined)     patch.is_all_day       = input.isAllDay
     if (input.memo !== undefined)         patch.memo             = input.memo
     if (input.groupLeaderId !== undefined) patch.group_manager_id = input.groupLeaderId
 

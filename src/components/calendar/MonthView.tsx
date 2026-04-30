@@ -27,9 +27,15 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
 
   const holidayMap = getJapaneseHolidays(days[0], days[days.length - 1])
 
-  const getEventsForDay = (date: Date) =>
-    events.filter(e => e.date === toDateString(date))
+  const getEventsForDay = (date: Date) => {
+    const dateStr = toDateString(date)
+    const all = events.filter(e => e.date === dateStr)
+    const allDay = all.filter(e => e.isAllDay)
+    const timed = all
+      .filter(e => !e.isAllDay)
       .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+    return { allDay, timed, total: all.length }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -44,13 +50,17 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
 
       <div className="flex-1 grid grid-cols-7 grid-rows-6 border-l">
         {days.map(day => {
-          const dayEvents = getEventsForDay(day)
+          const { allDay, timed, total } = getEventsForDay(day)
           const isToday = isTodayDate(day)
           const isSat = isSaturday(day)
           const isSun = isSunday(day)
           const isCurrent = isSameMonth(day, currentDate)
           const holidayName = holidayMap.get(toDateString(day)) ?? null
           const isRedDay = isSun || !!holidayName
+
+          // 表示順：全日 → 時間指定、合計3件まで
+          const displayEvents = [...allDay, ...timed]
+          const maxShow = 3
 
           return (
             <div
@@ -72,8 +82,8 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                 )}>
                   {day.getDate()}
                 </span>
-                {dayEvents.length > 0 && (
-                  <span className="text-xs text-gray-400 pr-0.5">{dayEvents.length}件</span>
+                {total > 0 && (
+                  <span className="text-xs text-gray-400 pr-0.5">{total}件</span>
                 )}
               </div>
               {holidayName && (
@@ -82,7 +92,7 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                 </p>
               )}
               <div className="space-y-0.5">
-                {dayEvents.slice(0, 3).map(event => (
+                {displayEvents.slice(0, maxShow).map(event => (
                   <EventBadge
                     key={event.id}
                     event={event}
@@ -92,8 +102,8 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                     onClick={() => onEventClick(event)}
                   />
                 ))}
-                {dayEvents.length > 3 && (
-                  <p className="text-xs text-gray-400 pl-1">他{dayEvents.length - 3}件</p>
+                {total > maxShow && (
+                  <p className="text-xs text-gray-400 pl-1">他{total - maxShow}件</p>
                 )}
               </div>
             </div>

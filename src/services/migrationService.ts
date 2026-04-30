@@ -116,6 +116,7 @@ export async function migrateToSupabase(): Promise<MigrationResult> {
       start_time: event.startTime || '09:00',
       end_time: event.endTime || '10:00',
       type: (event.type || 'other') as EventType,
+      is_all_day: false,
       memo: event.memo ?? '',
     })
 
