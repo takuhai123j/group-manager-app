@@ -14,6 +14,7 @@ interface WeekViewProps {
   currentDate: Date
   events: ScheduleEvent[]
   managers: GroupManager[]
+  managerFacilities: Record<string, string[]>
   colorMode: ColorMode
   onSlotClick: (date: Date, time: string) => void
   onEventClick: (event: ScheduleEvent) => void
@@ -21,7 +22,7 @@ interface WeekViewProps {
 
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 
-export function WeekView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: WeekViewProps) {
+export function WeekView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick }: WeekViewProps) {
   const weekDays = getWeekDays(currentDate)
   const holidayMap = getJapaneseHolidays(weekDays[0], weekDays[weekDays.length - 1])
 
@@ -156,6 +157,9 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
                     ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor)
                     : undefined
 
+                  const defaultIds = managerFacilities[event.groupLeaderId] ?? []
+                  const isOutside = !!event.facilityId && defaultIds.length > 0 && !defaultIds.includes(event.facilityId)
+
                   return (
                     <button
                       key={event.id}
@@ -181,7 +185,12 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
                         <p className="text-xs opacity-70 truncate leading-tight">{event.groupLeaderName}</p>
                       )}
                       {height >= 60 && event.facilityName && (
-                        <p className="text-xs opacity-60 truncate leading-tight">{event.facilityName}</p>
+                        <p className="text-xs opacity-60 truncate leading-tight">
+                          {event.facilityName}
+                          {isOutside && (
+                            <span className="ml-1 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold">担当外</span>
+                          )}
+                        </p>
                       )}
                       {height >= 76 && (
                         <p className="text-xs opacity-50 truncate leading-tight">[{typeConfig.label}]</p>

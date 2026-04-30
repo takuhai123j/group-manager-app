@@ -69,6 +69,41 @@ export type Database = {
         }
         Relationships: []
       }
+      group_manager_facilities: {
+        Row: {
+          id: string
+          group_manager_id: string
+          facility_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          group_manager_id: string
+          facility_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          group_manager_id?: string
+          facility_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'group_manager_facilities_group_manager_id_fkey'
+            columns: ['group_manager_id']
+            isOneToOne: false
+            referencedRelation: 'group_managers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'group_manager_facilities_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       schedules: {
         Row: {
           created_at: string

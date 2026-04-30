@@ -7,6 +7,7 @@ import { useEvents } from '@/hooks/useEvents'
 import { useCalendar } from '@/hooks/useCalendar'
 import { useFacilities } from '@/hooks/useFacilities'
 import { useGroupManagers } from '@/hooks/useGroupManagers'
+import { useManagerFacilities } from '@/hooks/useManagerFacilities'
 import { GroupLeaderTabs, ALL_LEADER_ID } from '@/components/GroupLeaderTabs'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
@@ -117,7 +118,13 @@ export default function HomePage() {
     addManager, updateManager, toggleActive, moveUp, moveDown,
   } = useGroupManagers()
 
-  const loading = eventsLoading || facilitiesLoading || managersLoading
+  const {
+    managerFacilities,
+    loading: managerFacilitiesLoading,
+    setDefaultFacilities,
+  } = useManagerFacilities()
+
+  const loading = eventsLoading || facilitiesLoading || managersLoading || managerFacilitiesLoading
   const loadError = eventsError ?? facilitiesError ?? managersError
 
   // エラー内容をコンソールに出力（ブラウザDevToolsで確認可能）
@@ -311,6 +318,7 @@ export default function HomePage() {
             currentDate={currentDate}
             events={filteredEvents}
             managers={managers}
+            managerFacilities={managerFacilities}
             colorMode={colorMode}
             onDayClick={handleDayClick}
             onEventClick={openEdit}
@@ -321,6 +329,7 @@ export default function HomePage() {
             currentDate={currentDate}
             events={filteredEvents}
             managers={managers}
+            managerFacilities={managerFacilities}
             colorMode={colorMode}
             onSlotClick={handleSlotClick}
             onEventClick={openEdit}
@@ -331,6 +340,7 @@ export default function HomePage() {
             currentDate={currentDate}
             events={filteredEvents}
             managers={managers}
+            managerFacilities={managerFacilities}
             colorMode={colorMode}
             onSlotClick={handleSlotClick}
             onEventClick={openEdit}
@@ -347,6 +357,7 @@ export default function HomePage() {
         allFacilities={allFacilities}
         activeManagers={activeManagers}
         allManagers={managers}
+        managerFacilities={managerFacilities}
         preselectedLeaderId={preselectedLeaderId}
         onClose={closeEventModal}
         onSave={handleSave}
@@ -367,12 +378,15 @@ export default function HomePage() {
       <GroupManagerModal
         isOpen={groupManagerOpen}
         managers={managers}
+        allFacilities={allFacilities}
+        managerFacilities={managerFacilities}
         onClose={() => setGroupManagerOpen(false)}
         onAdd={addManager}
         onUpdate={updateManager}
         onToggleActive={toggleActive}
         onMoveUp={moveUp}
         onMoveDown={moveDown}
+        onSetFacilities={setDefaultFacilities}
       />
     </div>
   )

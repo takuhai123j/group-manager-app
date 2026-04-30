@@ -14,6 +14,7 @@ interface EventModalProps {
   allFacilities: Facility[]
   activeManagers: GroupManager[]
   allManagers: GroupManager[]
+  managerFacilities: Record<string, string[]>
   preselectedLeaderId?: string
   onClose: () => void
   onSave: (input: CreateEventInput) => Promise<void>
@@ -53,6 +54,7 @@ export function EventModal({
   allFacilities,
   activeManagers,
   allManagers,
+  managerFacilities,
   preselectedLeaderId,
   onClose,
   onSave,
@@ -134,7 +136,6 @@ export function EventModal({
     setErrors(prev => ({ ...prev, [key]: undefined }))
   }
 
-  // 種別変更：全日予定に切り替わる際はタイトルを自動入力
   const handleTypeChange = (type: EventType) => {
     const newConfig = EVENT_TYPES.find(t => t.value === type)
     const currentAllDayLabels = EVENT_TYPES.filter(t => isAllDayType(t.value)).map(t => t.label)
@@ -160,6 +161,16 @@ export function EventModal({
   const selectableManagers = extraManager
     ? [...activeManagers, extraManager]
     : activeManagers
+
+  // 基本担当施設の分類
+  const defaultFacilityIds = form.groupLeaderId
+    ? (managerFacilities[form.groupLeaderId] ?? [])
+    : []
+  const defaultFacilities = facilities.filter(f => defaultFacilityIds.includes(f.id))
+  const otherFacilities = facilities.filter(f => !defaultFacilityIds.includes(f.id))
+  const isOutsideSelected = !!form.facilityId
+    && defaultFacilityIds.length > 0
+    && !defaultFacilityIds.includes(form.facilityId)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
@@ -342,15 +353,44 @@ export function EventModal({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
                 <option value="">（未設定）</option>
-                {facilities.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-                {extraFacility && (
-                  <option value={extraFacility.id}>
-                    {extraFacility.name}（無効化済み）
-                  </option>
+                {defaultFacilities.length > 0 ? (
+                  <>
+                    <optgroup label="── 基本担当施設">
+                      {defaultFacilities.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </optgroup>
+                    {(otherFacilities.length > 0 || extraFacility) && (
+                      <optgroup label="── その他の施設">
+                        {otherFacilities.map(f => (
+                          <option key={f.id} value={f.id}>{f.name}</option>
+                        ))}
+                        {extraFacility && (
+                          <option value={extraFacility.id}>
+                            {extraFacility.name}（無効化済み）
+                          </option>
+                        )}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {facilities.map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                    {extraFacility && (
+                      <option value={extraFacility.id}>
+                        {extraFacility.name}（無効化済み）
+                      </option>
+                    )}
+                  </>
                 )}
               </select>
+              {isOutsideSelected && (
+                <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                  基本担当外の施設です（応援・イレギュラー対応）
+                </p>
+              )}
             </div>
           )}
 

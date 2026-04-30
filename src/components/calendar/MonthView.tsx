@@ -12,6 +12,7 @@ interface MonthViewProps {
   currentDate: Date
   events: ScheduleEvent[]
   managers: GroupManager[]
+  managerFacilities: Record<string, string[]>
   colorMode: ColorMode
   onDayClick: (date: Date) => void
   onEventClick: (event: ScheduleEvent) => void
@@ -19,7 +20,7 @@ interface MonthViewProps {
 
 const DAY_HEADERS = ['月', '火', '水', '木', '金', '土', '日']
 
-export function MonthView({ currentDate, events, managers, colorMode, onDayClick, onEventClick }: MonthViewProps) {
+export function MonthView({ currentDate, events, managers, managerFacilities, colorMode, onDayClick, onEventClick }: MonthViewProps) {
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }),
     end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }),
@@ -97,6 +98,7 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                     key={event.id}
                     event={event}
                     managers={managers}
+                    managerFacilities={managerFacilities}
                     compact
                     colorMode={colorMode}
                     onClick={() => onEventClick(event)}

@@ -13,6 +13,7 @@ interface DayViewProps {
   currentDate: Date
   events: ScheduleEvent[]
   managers: GroupManager[]
+  managerFacilities: Record<string, string[]>
   colorMode: ColorMode
   onSlotClick: (date: Date, time: string) => void
   onEventClick: (event: ScheduleEvent) => void
@@ -20,7 +21,7 @@ interface DayViewProps {
 
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 
-export function DayView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: DayViewProps) {
+export function DayView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick }: DayViewProps) {
   const allEvents = events.filter(e => e.date === toDateString(currentDate))
   const allDayEvents = allEvents.filter(e => e.isAllDay)
   const positionedEvents = computeEventColumns(allEvents.filter(e => !e.isAllDay))
@@ -132,6 +133,9 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
                 ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor)
                 : undefined
 
+              const defaultIds = managerFacilities[event.groupLeaderId] ?? []
+              const isOutside = !!event.facilityId && defaultIds.length > 0 && !defaultIds.includes(event.facilityId)
+
               return (
                 <button
                   key={event.id}
@@ -171,9 +175,16 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
                       <p className="text-xs opacity-70 truncate">{event.groupLeaderName}</p>
                     </div>
                   )}
-                  {/* Facility */}
+                  {/* Facility + outside indicator */}
                   {height >= 60 && event.facilityName && (
-                    <p className="text-xs opacity-70 mt-0.5 truncate">📍 {event.facilityName}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className="text-xs opacity-70 truncate">📍 {event.facilityName}</p>
+                      {isOutside && (
+                        <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">
+                          担当外
+                        </span>
+                      )}
+                    </div>
                   )}
                   {/* Type label (multi-column時) */}
                   {height >= 76 && event.columnCount > 1 && (

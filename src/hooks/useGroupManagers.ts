@@ -31,14 +31,14 @@ export function useGroupManagers() {
     [managers]
   )
 
-  const addManager = useCallback(async (input: ManagerInput): Promise<boolean> => {
+  const addManager = useCallback(async (input: ManagerInput): Promise<string | false> => {
     const trimmed = input.name.trim()
     if (!trimmed) return false
     if (managers.some(m => m.name === trimmed)) return false
     try {
       const created = await groupManagerService.add(input)
       setManagers(prev => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder))
-      return true
+      return created.id
     } catch {
       return false
     }
