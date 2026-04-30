@@ -24,6 +24,13 @@ import {
 } from '@/services/migrationService'
 import type { ColorMode, EventFilters, ScheduleEvent, CreateEventInput } from '@/lib/types'
 
+// ブラウザConsoleにエラー詳細を出力するヘルパー
+function logError(context: string, error: unknown) {
+  if (typeof window !== 'undefined') {
+    console.error(`[${context}]`, error)
+  }
+}
+
 const EMPTY_FILTERS: EventFilters = { types: [], facilities: [] }
 
 // ── ローカルストレージ移行バナー ───────────────────────────────────────
@@ -112,6 +119,11 @@ export default function HomePage() {
 
   const loading = eventsLoading || facilitiesLoading || managersLoading
   const loadError = eventsError ?? facilitiesError ?? managersError
+
+  // エラー内容をコンソールに出力（ブラウザDevToolsで確認可能）
+  useEffect(() => {
+    if (loadError) logError('DataLoadError', loadError)
+  }, [loadError])
 
   // ── localStorage 移行バナー ──────────────────────────────────────
   const [showMigration, setShowMigration] = useState(false)
@@ -216,21 +228,16 @@ export default function HomePage() {
     )
   }
 
-  // ── エラー画面 ───────────────────────────────────────────────────
-  if (loadError) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-sm px-4">
-          <AlertTriangle size={32} className="text-red-400 mx-auto mb-3" />
-          <p className="text-sm font-medium text-gray-700 mb-1">データの読み込みに失敗しました</p>
-          <p className="text-xs text-gray-500 mb-4">{loadError}</p>
-          <p className="text-xs text-gray-400">
-            Supabaseの接続設定（.env.local）を確認してください。
-          </p>
-        </div>
+  // ── エラーバナー（エラー時もカレンダー画面は表示する） ──────────
+  const ErrorBanner = loadError ? (
+    <div className="flex items-start gap-3 px-4 py-3 bg-red-50 border-b border-red-200 text-sm flex-shrink-0">
+      <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-red-800">データの読み込みに失敗しました</p>
+        <p className="text-xs text-red-600 mt-0.5 truncate">{loadError}</p>
       </div>
-    )
-  }
+    </div>
+  ) : null
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
@@ -249,6 +256,9 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {/* エラーバナー（データ取得失敗時も空カレンダーを表示） */}
+      {ErrorBanner}
 
       {/* localStorage 移行バナー */}
       {showMigration && !migrationDone && (

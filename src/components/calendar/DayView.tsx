@@ -2,8 +2,9 @@
 
 import {
   cn, formatJa, toDateString, generateTimeSlots, getEventPosition,
-  isTodayDate, getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
+  isTodayDate, isSaturday, isSunday, getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
 } from '@/lib/utils'
+import { getHolidayName } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
@@ -21,9 +22,13 @@ const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 export function DayView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: DayViewProps) {
   const dayEvents = events
     .filter(e => e.date === toDateString(currentDate))
-    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
 
   const isToday = isTodayDate(currentDate)
+  const isSat = isSaturday(currentDate)
+  const isSun = isSunday(currentDate)
+  const holidayName = getHolidayName(currentDate)
+  const isRedDay = isSun || !!holidayName
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -32,13 +37,17 @@ export function DayView({ currentDate, events, managers, colorMode, onSlotClick,
         <div className="flex items-center gap-3">
           <div className={cn(
             'w-12 h-12 flex items-center justify-center rounded-full text-xl font-bold flex-shrink-0',
-            isToday ? 'bg-blue-600 text-white' : 'bg-white border-2 border-gray-200 text-gray-800'
+            isToday ? 'bg-blue-600 text-white'
+              : isRedDay ? 'bg-red-50 border-2 border-red-200 text-red-600'
+              : isSat ? 'bg-blue-50 border-2 border-blue-200 text-blue-600'
+              : 'bg-white border-2 border-gray-200 text-gray-800'
           )}>{currentDate.getDate()}</div>
           <div>
             <p className="text-lg font-semibold text-gray-800">{formatJa(currentDate, 'yyyy年M月d日')}</p>
             <p className="text-sm text-gray-500">
               {formatJa(currentDate, 'EEEE')}
               {isToday && <span className="ml-2 text-blue-600 font-medium">今日</span>}
+              {holidayName && <span className="ml-2 text-red-500 font-medium">{holidayName}</span>}
             </p>
           </div>
           <div className="ml-auto text-sm text-gray-500">{dayEvents.length}件の予定</div>

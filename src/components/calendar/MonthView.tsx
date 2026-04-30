@@ -4,6 +4,7 @@ import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth,
 } from 'date-fns'
 import { cn, toDateString, isTodayDate, isSaturday, isSunday } from '@/lib/utils'
+import { getJapaneseHolidays } from '@/lib/holidays'
 import { EventBadge } from '@/components/events/EventBadge'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
@@ -24,9 +25,11 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
     end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }),
   })
 
+  const holidayMap = getJapaneseHolidays(days[0], days[days.length - 1])
+
   const getEventsForDay = (date: Date) =>
     events.filter(e => e.date === toDateString(date))
-      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
 
   return (
     <div className="flex flex-col h-full">
@@ -46,6 +49,8 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
           const isSat = isSaturday(day)
           const isSun = isSunday(day)
           const isCurrent = isSameMonth(day, currentDate)
+          const holidayName = holidayMap.get(toDateString(day)) ?? null
+          const isRedDay = isSun || !!holidayName
 
           return (
             <div
@@ -60,8 +65,8 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                 <span className={cn(
                   'inline-flex items-center justify-center w-7 h-7 text-sm rounded-full font-medium',
                   isToday ? 'bg-blue-600 text-white'
-                    : isSun ? 'text-red-500'
-                    : isSat ? 'text-blue-600'
+                    : isRedDay ? (isCurrent ? 'text-red-500' : 'text-red-300')
+                    : isSat ? (isCurrent ? 'text-blue-600' : 'text-blue-300')
                     : isCurrent ? 'text-gray-800'
                     : 'text-gray-400'
                 )}>
@@ -71,6 +76,11 @@ export function MonthView({ currentDate, events, managers, colorMode, onDayClick
                   <span className="text-xs text-gray-400 pr-0.5">{dayEvents.length}件</span>
                 )}
               </div>
+              {holidayName && (
+                <p className="text-xs text-red-500 font-medium truncate leading-tight mb-0.5 px-0.5">
+                  {holidayName}
+                </p>
+              )}
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 3).map(event => (
                   <EventBadge

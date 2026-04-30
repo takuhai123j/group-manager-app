@@ -55,9 +55,12 @@ export function generateTimeSlots(startHour = 6, endHour = 22): string[] {
   return slots
 }
 
-export function timeToMinutes(time: string): number {
-  const [h, m] = time.split(':').map(Number)
-  return h * 60 + m
+export function timeToMinutes(time: string | null | undefined): number {
+  if (!time || !time.includes(':')) return 0
+  const parts = time.split(':')
+  const h = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m)
 }
 
 export function minutesToTime(minutes: number): string {
@@ -70,12 +73,12 @@ export function minutesToTime(minutes: number): string {
 export const SLOT_HEIGHT = 40 // px per 30-min slot
 export const GRID_START_HOUR = 6
 
-export function getEventPosition(startTime: string, endTime: string) {
-  const startMin = timeToMinutes(startTime) - GRID_START_HOUR * 60
-  const endMin = timeToMinutes(endTime) - GRID_START_HOUR * 60
+export function getEventPosition(startTime: string | null | undefined, endTime: string | null | undefined) {
+  const startMin = Math.max(0, timeToMinutes(startTime) - GRID_START_HOUR * 60)
+  const endMin = Math.max(0, timeToMinutes(endTime) - GRID_START_HOUR * 60)
   const top = (startMin / 30) * SLOT_HEIGHT
   const rawHeight = ((endMin - startMin) / 30) * SLOT_HEIGHT
-  const height = Math.max(rawHeight, SLOT_HEIGHT / 2)
+  const height = Math.max(rawHeight > 0 ? rawHeight : SLOT_HEIGHT / 2, SLOT_HEIGHT / 2)
   return { top, height }
 }
 

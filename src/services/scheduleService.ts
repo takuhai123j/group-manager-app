@@ -38,19 +38,19 @@ type ScheduleRow = {
 
 function toScheduleEvent(row: ScheduleRow): ScheduleEvent {
   return {
-    id: row.id,
-    title: row.title,
-    date: row.date,
-    startTime: row.start_time,
-    endTime: row.end_time,
-    facilityId: row.facility_id,
+    id: row.id ?? '',
+    title: row.title ?? '',
+    date: row.date ?? '',
+    startTime: row.start_time ?? '00:00',
+    endTime: row.end_time ?? '00:00',
+    facilityId: row.facility_id ?? null,
     facilityName: row.facilities?.name ?? '',
-    type: row.type as EventType,
-    memo: row.memo,
-    groupLeaderId: row.group_manager_id,
+    type: (row.type as EventType) ?? 'other',
+    memo: row.memo ?? '',
+    groupLeaderId: row.group_manager_id ?? '',
     groupLeaderName: row.group_managers?.name ?? '',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.created_at ?? '',
+    updatedAt: row.updated_at ?? '',
   }
 }
 

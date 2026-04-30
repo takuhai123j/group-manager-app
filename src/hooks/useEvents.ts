@@ -44,13 +44,13 @@ export function useEvents() {
   const getEventsForDate = useCallback((dateStr: string): ScheduleEvent[] => {
     return events
       .filter(e => e.date === dateStr)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
   }, [events])
 
   const getEventsForDateRange = useCallback((startDate: string, endDate: string): ScheduleEvent[] => {
     return events
       .filter(e => e.date >= startDate && e.date <= endDate)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+      .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || (a.startTime ?? '').localeCompare(b.startTime ?? ''))
   }, [events])
 
   return {

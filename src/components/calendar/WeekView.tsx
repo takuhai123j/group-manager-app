@@ -5,6 +5,7 @@ import {
   getEventPosition, isTodayDate, isSaturday, isSunday,
   getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
 } from '@/lib/utils'
+import { getJapaneseHolidays } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
@@ -21,6 +22,7 @@ const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
 
 export function WeekView({ currentDate, events, managers, colorMode, onSlotClick, onEventClick }: WeekViewProps) {
   const weekDays = getWeekDays(currentDate)
+  const holidayMap = getJapaneseHolidays(weekDays[0], weekDays[weekDays.length - 1])
   const getEventsForDay = (date: Date) => events.filter(e => e.date === toDateString(date))
 
   return (
@@ -32,18 +34,25 @@ export function WeekView({ currentDate, events, managers, colorMode, onSlotClick
           const isToday = isTodayDate(day)
           const isSat = isSaturday(day)
           const isSun = isSunday(day)
+          const holidayName = holidayMap.get(toDateString(day)) ?? null
+          const isRedDay = isSun || !!holidayName
           return (
             <div key={toDateString(day)} className="flex-1 min-w-0 py-2 text-center border-l">
               <div className={cn('text-xs font-medium',
-                isSun ? 'text-red-500' : isSat ? 'text-blue-600' : 'text-gray-500'
+                isRedDay ? 'text-red-500' : isSat ? 'text-blue-600' : 'text-gray-500'
               )}>{formatJa(day, 'EEE')}</div>
               <div className={cn(
                 'mx-auto mt-0.5 w-8 h-8 flex items-center justify-center text-sm font-semibold rounded-full',
                 isToday ? 'bg-blue-600 text-white'
-                  : isSun ? 'text-red-500'
+                  : isRedDay ? 'text-red-500'
                   : isSat ? 'text-blue-600'
                   : 'text-gray-800'
               )}>{day.getDate()}</div>
+              {holidayName && (
+                <p className="text-xs text-red-500 leading-tight mt-0.5 truncate px-1 font-medium">
+                  {holidayName}
+                </p>
+              )}
             </div>
           )
         })}
