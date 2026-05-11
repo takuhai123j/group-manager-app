@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Bell, ChevronDown, ChevronUp, AlertCircle, Info } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
 import type { Announcement } from '@/lib/types'
+
+const STORAGE_KEY = 'announcement_banner_expanded'
 
 interface AnnouncementBannerProps {
   announcements: Announcement[]
@@ -11,7 +13,18 @@ interface AnnouncementBannerProps {
 }
 
 export function AnnouncementBanner({ announcements, onOpenAdmin }: AnnouncementBannerProps) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved !== null) setExpanded(saved === 'true')
+  }, [])
+
+  const toggle = () => {
+    const next = !expanded
+    setExpanded(next)
+    localStorage.setItem(STORAGE_KEY, String(next))
+  }
 
   if (announcements.length === 0) return null
 
@@ -25,7 +38,7 @@ export function AnnouncementBanner({ announcements, onOpenAdmin }: AnnouncementB
       {/* ヘッダー行 */}
       <div
         className="flex items-center justify-between px-4 py-2 cursor-pointer select-none"
-        onClick={() => setExpanded(v => !v)}
+        onClick={toggle}
       >
         <div className="flex items-center gap-2">
           <Bell size={13} className={hasImportant ? 'text-red-500' : 'text-blue-500'} />
