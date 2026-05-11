@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { X, Plus, Trash2, Save, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Announcement, CreateAnnouncementInput, UpdateAnnouncementInput } from '@/lib/types'
@@ -33,7 +33,7 @@ export function AnnouncementAdmin({
   const [deleting, setDeleting] = useState<string | null>(null)
   const [formError, setFormError] = useState('')
 
-  if (!isOpen) return null
+  // ── フック呼び出しより後に early return しないためすべてここで定義 ──
 
   const openAdd = () => {
     setForm(defaultForm)
@@ -70,16 +70,18 @@ export function AnnouncementAdmin({
     }
   }
 
-  const handleDelete = useCallback(async (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('このお知らせを削除しますか？')) return
     setDeleting(id)
     try { await onDelete(id) }
     finally { setDeleting(null) }
-  }, [onDelete])
+  }
 
-  const handleToggleActive = useCallback(async (a: Announcement) => {
+  const handleToggleActive = async (a: Announcement) => {
     await onUpdate(a.id, { active: !a.active })
-  }, [onUpdate])
+  }
+
+  if (!isOpen) return null
 
   const setF = <K extends keyof CreateAnnouncementInput>(k: K, v: CreateAnnouncementInput[K]) => {
     setForm(prev => ({ ...prev, [k]: v }))
