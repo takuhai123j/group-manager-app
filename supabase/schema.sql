@@ -147,6 +147,30 @@ $$;
 ALTER TABLE schedules ADD COLUMN IF NOT EXISTS is_all_day BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- -------------------------------------------------------
+-- Announcements（お知らせ）
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS announcements (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title        TEXT        NOT NULL,
+  content      TEXT        NOT NULL,
+  is_important BOOLEAN     NOT NULL DEFAULT FALSE,
+  active       BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_announcements_updated_at ON announcements;
+CREATE TRIGGER trg_announcements_updated_at
+  BEFORE UPDATE ON announcements
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_announcements" ON announcements;
+CREATE POLICY "anon_all_announcements" ON announcements
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）
 -- -------------------------------------------------------
 -- ALTER TABLE group_managers ADD COLUMN IF NOT EXISTS org_id UUID;

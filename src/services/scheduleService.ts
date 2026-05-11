@@ -114,6 +114,28 @@ export const scheduleService = {
     return toScheduleEvent(data as unknown as ScheduleRow)
   },
 
+  async createBulk(inputs: CreateEventInput[]): Promise<ScheduleEvent[]> {
+    if (inputs.length === 0) return []
+    const supabase = createClient()
+    const rows = inputs.map(input => ({
+      group_manager_id: input.groupLeaderId,
+      facility_id: null,
+      title: input.title,
+      date: input.date,
+      start_time: '00:00',
+      end_time: '00:00',
+      type: input.type,
+      is_all_day: true,
+      memo: input.memo,
+    }))
+    const { data, error } = await supabase
+      .from('schedules')
+      .insert(rows)
+      .select(SELECT_WITH_JOINS)
+    if (error) throw error
+    return (data ?? []).map(row => toScheduleEvent(row as unknown as ScheduleRow))
+  },
+
   async delete(id: string): Promise<void> {
     const supabase = createClient()
     const { error } = await supabase

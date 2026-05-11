@@ -30,6 +30,12 @@ export function useEvents() {
     return created
   }, [])
 
+  const addEvents = useCallback(async (inputs: CreateEventInput[]): Promise<ScheduleEvent[]> => {
+    const created = await scheduleService.createBulk(inputs)
+    setEvents(prev => [...prev, ...created])
+    return created
+  }, [])
+
   const updateEvent = useCallback(async (id: string, input: UpdateEventInput): Promise<ScheduleEvent> => {
     const updated = await scheduleService.update(id, input)
     setEvents(prev => prev.map(e => e.id === id ? updated : e))
@@ -58,6 +64,7 @@ export function useEvents() {
     loading,
     error,
     addEvent,
+    addEvents,
     updateEvent,
     deleteEvent,
     getEventsForDate,

@@ -72,3 +72,22 @@ export interface EventFilters {
   types: EventType[]
   facilities: string[]   // 施設名でフィルタ（facilityName と照合）
 }
+
+export interface Announcement {
+  id: string
+  title: string
+  content: string
+  isImportant: boolean
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateAnnouncementInput = {
+  title: string
+  content: string
+  isImportant: boolean
+  active: boolean
+}
+
+export type UpdateAnnouncementInput = Partial<CreateAnnouncementInput>

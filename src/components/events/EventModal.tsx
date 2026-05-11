@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Trash2, Save, Building2, CalendarDays } from 'lucide-react'
-import { cn, generateTimeSlots, toDateString } from '@/lib/utils'
+import { X, Trash2, Save, Building2, CalendarDays, Plus, ChevronLeft } from 'lucide-react'
+import { cn, generateTimeSlots, toDateString, formatJa } from '@/lib/utils'
 import { EVENT_TYPES, isAllDayType } from '@/constants/eventTypes'
 import type { ScheduleEvent, CreateEventInput, EventType, GroupManager, Facility } from '@/lib/types'
 
@@ -18,9 +18,12 @@ interface EventModalProps {
   preselectedLeaderId?: string
   onClose: () => void
   onSave: (input: CreateEventInput) => Promise<void>
+  onSaveBulk?: (inputs: CreateEventInput[]) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onOpenFacilityManager?: () => void
 }
+
+type BulkMode = 'single' | 'multiple' | 'range'
 
 interface FormState {
   title: string
@@ -46,6 +49,29 @@ const defaultForm = (date?: Date, leaderId?: string): FormState => ({
   groupLeaderId: leaderId ?? '',
 })
 
+function generateDateRange(startDate: string, endDate: string, maxDays = 62): string[] {
+  if (!startDate || !endDate || startDate > endDate) return []
+  const dates: string[] = []
+  const cur = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  let count = 0
+  while (cur <= end && count < maxDays) {
+    dates.push(cur.toISOString().slice(0, 10))
+    cur.setDate(cur.getDate() + 1)
+    count++
+  }
+  return dates
+}
+
+function formatDateJa(dateStr: string): string {
+  if (!dateStr) return ''
+  try {
+    return formatJa(new Date(dateStr + 'T00:00:00'), 'yyyy/MM/dd（EEE）')
+  } catch {
+    return dateStr
+  }
+}
+
 export function EventModal({
   isOpen,
   initialDate,
@@ -58,6 +84,7 @@ export function EventModal({
   preselectedLeaderId,
   onClose,
   onSave,
+  onSaveBulk,
   onDelete,
   onOpenFacilityManager,
 }: EventModalProps) {
@@ -66,7 +93,16 @@ export function EventModal({
   const [deleting, setDeleting] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
 
+  // 一括登録用ステート（全日予定の新規追加時のみ有効）
+  const [bulkMode, setBulkMode] = useState<BulkMode>('single')
+  const [multiDateList, setMultiDateList] = useState<string[]>([])
+  const [rangeEndDate, setRangeEndDate] = useState('')
+  const [bulkError, setBulkError] = useState('')
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
+  const [bulkSaving, setBulkSaving] = useState(false)
+
   const isAllDay = isAllDayType(form.type)
+  const showBulkMode = isAllDay && !editingEvent
 
   useEffect(() => {
     if (!isOpen) return
@@ -85,13 +121,19 @@ export function EventModal({
       setForm(defaultForm(initialDate, preselectedLeaderId))
     }
     setErrors({})
+    setBulkMode('single')
+    setMultiDateList([])
+    setRangeEndDate('')
+    setBulkError('')
+    setShowBulkConfirm(false)
   }, [isOpen, editingEvent, initialDate, preselectedLeaderId])
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {}
     if (!form.title.trim()) e.title = 'タイトルを入力してください'
-    if (!form.date) e.date = '日付を選択してください'
+    if (bulkMode === 'single' && !form.date) e.date = '日付を選択してください'
     if (!isAllDay) {
+      if (!form.date) e.date = '日付を選択してください'
       if (!form.startTime) e.startTime = '開始時間を選択してください'
       if (!form.endTime) e.endTime = '終了時間を選択してください'
       if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
@@ -101,13 +143,50 @@ export function EventModal({
     return Object.keys(e).length === 0
   }
 
+  const getDatesForBulk = (): string[] => {
+    if (!showBulkMode) return [form.date].filter(Boolean)
+    if (bulkMode === 'single') return [form.date].filter(Boolean)
+    if (bulkMode === 'multiple') {
+      return [...new Set(multiDateList.filter(Boolean))].sort()
+    }
+    return generateDateRange(form.date, rangeEndDate)
+  }
+
+  const handleBulkModeChange = (mode: BulkMode) => {
+    setBulkMode(mode)
+    setBulkError('')
+    if (mode === 'multiple') {
+      setMultiDateList([form.date].filter(Boolean))
+    }
+  }
+
   const handleSave = useCallback(async () => {
     if (!validate()) return
+    setBulkError('')
+
+    if (showBulkMode) {
+      if (bulkMode === 'range') {
+        if (!rangeEndDate) { setBulkError('終了日を選択してください'); return }
+        if (form.date > rangeEndDate) { setBulkError('終了日は開始日以降を選択してください'); return }
+      }
+      if (bulkMode === 'multiple') {
+        const valid = multiDateList.filter(Boolean)
+        if (valid.length === 0) { setBulkError('日付を1つ以上選択してください'); return }
+      }
+      const dates = getDatesForBulk()
+      if (dates.length > 1) {
+        setShowBulkConfirm(true)
+        return
+      }
+    }
+
+    // 単日保存（通常予定 or 全日1件）
     setSaving(true)
     try {
+      const date = showBulkMode ? (getDatesForBulk()[0] ?? form.date) : form.date
       await onSave({
         title: form.title.trim(),
-        date: form.date,
+        date,
         startTime: isAllDay ? '00:00' : form.startTime,
         endTime: isAllDay ? '00:00' : form.endTime,
         facilityId: isAllDay ? null : (form.facilityId || null),
@@ -121,7 +200,34 @@ export function EventModal({
       setSaving(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, isAllDay, onSave, onClose])
+  }, [form, isAllDay, showBulkMode, bulkMode, rangeEndDate, multiDateList, onSave, onClose])
+
+  const handleBulkConfirm = useCallback(async () => {
+    const dates = getDatesForBulk()
+    const inputs: CreateEventInput[] = dates.map(date => ({
+      title: form.title.trim(),
+      date,
+      startTime: '00:00',
+      endTime: '00:00',
+      facilityId: null,
+      type: form.type,
+      isAllDay: true,
+      memo: form.memo.trim(),
+      groupLeaderId: form.groupLeaderId,
+    }))
+    setBulkSaving(true)
+    try {
+      if (onSaveBulk) {
+        await onSaveBulk(inputs)
+      } else {
+        for (const input of inputs) await onSave(input)
+      }
+      onClose()
+    } finally {
+      setBulkSaving(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, bulkMode, multiDateList, rangeEndDate, onSaveBulk, onSave, onClose])
 
   const handleDelete = useCallback(async () => {
     if (!editingEvent || !onDelete) return
@@ -147,6 +253,10 @@ export function EventModal({
       title: shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title,
     }))
     setErrors(prev => ({ ...prev, type: undefined, title: undefined }))
+    if (!isAllDayType(type)) {
+      setBulkMode('single')
+      setShowBulkConfirm(false)
+    }
   }
 
   if (!isOpen) return null
@@ -162,7 +272,6 @@ export function EventModal({
     ? [...activeManagers, extraManager]
     : activeManagers
 
-  // 基本担当施設の分類
   const defaultFacilityIds = form.groupLeaderId
     ? (managerFacilities[form.groupLeaderId] ?? [])
     : []
@@ -172,6 +281,60 @@ export function EventModal({
     && defaultFacilityIds.length > 0
     && !defaultFacilityIds.includes(form.facilityId)
 
+  const typeLabel = EVENT_TYPES.find(t => t.value === form.type)?.label ?? ''
+  const managerName = selectableManagers.find(m => m.id === form.groupLeaderId)?.name ?? ''
+
+  // ── 一括登録確認画面 ────────────────────────────────────────────
+  if (showBulkConfirm) {
+    const dates = getDatesForBulk()
+    const displayDates = dates.slice(0, 10)
+    const remaining = dates.length - displayDates.length
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white z-10">
+            <h2 className="text-base font-semibold text-gray-800">登録確認</h2>
+            <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-4">
+            <p className="text-base font-semibold text-gray-800 mb-1">
+              {dates.length}日分の{typeLabel}を登録しますか？
+            </p>
+            <p className="text-sm text-gray-500 mb-4">担当：{managerName}</p>
+            <div className="bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-100 mb-1">
+              {displayDates.map(d => (
+                <div key={d} className="px-3 py-2 text-sm text-gray-700">{formatDateJa(d)}</div>
+              ))}
+              {remaining > 0 && (
+                <div className="px-3 py-2 text-sm text-gray-400">他 {remaining}件</div>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3 px-4 py-3 border-t sticky bottom-0 bg-white">
+            <button
+              onClick={() => setShowBulkConfirm(false)}
+              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+            >
+              <ChevronLeft size={16} />戻る
+            </button>
+            <button
+              onClick={handleBulkConfirm}
+              disabled={bulkSaving}
+              className="flex-1 flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Save size={16} />
+              {bulkSaving ? '登録中…' : '登録する'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── 通常フォーム ────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -275,22 +438,157 @@ export function EventModal({
             </div>
           </div>
 
-          {/* Date */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              日付 <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={e => set('date', e.target.value)}
-              className={cn(
-                'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                errors.date ? 'border-red-400' : 'border-gray-300'
+          {/* 日付登録モード（全日 新規のみ） */}
+          {showBulkMode && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">日付登録モード</label>
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+                {(['single', 'multiple', 'range'] as const).map((mode, idx) => {
+                  const labels: Record<BulkMode, string> = { single: '単日', multiple: '複数日', range: '期間指定' }
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleBulkModeChange(mode)}
+                      className={cn(
+                        'flex-1 py-2 font-medium transition-colors',
+                        idx > 0 && 'border-l border-gray-300',
+                        bulkMode === mode
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      )}
+                    >
+                      {labels[mode]}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 日付エリア */}
+          {showBulkMode ? (
+            <>
+              {/* 単日モード */}
+              {bulkMode === 'single' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    日付 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={e => set('date', e.target.value)}
+                    className={cn(
+                      'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                      errors.date ? 'border-red-400' : 'border-gray-300'
+                    )}
+                  />
+                  {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
+                </div>
               )}
-            />
-            {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
-          </div>
+
+              {/* 複数日モード */}
+              {bulkMode === 'multiple' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    日付（複数選択可） <span className="text-red-500">*</span>
+                  </label>
+                  <div className="space-y-2">
+                    {multiDateList.map((d, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input
+                          type="date"
+                          value={d}
+                          onChange={e => {
+                            const next = [...multiDateList]
+                            next[i] = e.target.value
+                            setMultiDateList(next)
+                            setBulkError('')
+                          }}
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {multiDateList.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setMultiDateList(prev => prev.filter((_, j) => j !== i))}
+                            className="p-2.5 rounded-lg border border-gray-300 text-gray-400 hover:text-red-500 hover:border-red-300"
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setMultiDateList(prev => [...prev, ''])}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-blue-300 text-blue-600 text-sm hover:bg-blue-50"
+                    >
+                      <Plus size={14} />日付を追加
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 期間指定モード */}
+              {bulkMode === 'range' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      開始日 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={form.date}
+                      onChange={e => { set('date', e.target.value); setBulkError('') }}
+                      className={cn(
+                        'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                        errors.date ? 'border-red-400' : 'border-gray-300'
+                      )}
+                    />
+                    {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      終了日 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={rangeEndDate}
+                      min={form.date || undefined}
+                      onChange={e => { setRangeEndDate(e.target.value); setBulkError('') }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {form.date && rangeEndDate && form.date <= rangeEndDate && (
+                    <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                      {generateDateRange(form.date, rangeEndDate).length}日間
+                      （{formatDateJa(form.date)} 〜 {formatDateJa(rangeEndDate)}）
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {bulkError && <p className="text-xs text-red-500">{bulkError}</p>}
+            </>
+          ) : (
+            /* 通常の日付入力（非全日 or 編集） */
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                日付 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={form.date}
+                onChange={e => set('date', e.target.value)}
+                className={cn(
+                  'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                  errors.date ? 'border-red-400' : 'border-gray-300'
+                )}
+              />
+              {errors.date && <p className="mt-1 text-xs text-red-500">{errors.date}</p>}
+            </div>
+          )}
 
           {/* Time (timed events only) / All-day indicator */}
           {isAllDay ? (

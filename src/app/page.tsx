@@ -8,6 +8,7 @@ import { useCalendar } from '@/hooks/useCalendar'
 import { useFacilities } from '@/hooks/useFacilities'
 import { useGroupManagers } from '@/hooks/useGroupManagers'
 import { useManagerFacilities } from '@/hooks/useManagerFacilities'
+import { useAnnouncements } from '@/hooks/useAnnouncements'
 import { GroupLeaderTabs, ALL_LEADER_ID } from '@/components/GroupLeaderTabs'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
@@ -17,6 +18,8 @@ import { DayView } from '@/components/calendar/DayView'
 import { EventModal } from '@/components/events/EventModal'
 import { FacilityManager } from '@/components/facilities/FacilityManager'
 import { GroupManagerModal } from '@/components/managers/GroupManagerModal'
+import { AnnouncementBanner } from '@/components/announcements/AnnouncementBanner'
+import { AnnouncementAdmin } from '@/components/announcements/AnnouncementAdmin'
 import {
   hasLocalStorageData,
   migrateToSupabase,
@@ -105,7 +108,7 @@ export default function HomePage() {
   const { currentDate, view, goToToday, navigateNext, navigatePrev, changeView, setDate } = useCalendar()
   const {
     events, loading: eventsLoading, error: eventsError,
-    addEvent, updateEvent, deleteEvent, reload: reloadEvents,
+    addEvent, addEvents, updateEvent, deleteEvent, reload: reloadEvents,
   } = useEvents()
   const {
     facilities, allFacilities, facilityNames,
@@ -123,6 +126,13 @@ export default function HomePage() {
     loading: managerFacilitiesLoading,
     setDefaultFacilities,
   } = useManagerFacilities()
+
+  const {
+    announcements,
+    addAnnouncement,
+    updateAnnouncement,
+    deleteAnnouncement,
+  } = useAnnouncements()
 
   const loading = eventsLoading || facilitiesLoading || managersLoading || managerFacilitiesLoading
   const loadError = eventsError ?? facilitiesError ?? managersError
@@ -161,6 +171,7 @@ export default function HomePage() {
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null)
   const [facilityManagerOpen, setFacilityManagerOpen] = useState(false)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
+  const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
 
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
@@ -200,6 +211,10 @@ export default function HomePage() {
     if (editingEvent) await updateEvent(editingEvent.id, input)
     else await addEvent(input)
   }, [editingEvent, addEvent, updateEvent])
+
+  const handleSaveBulk = useCallback(async (inputs: CreateEventInput[]) => {
+    await addEvents(inputs)
+  }, [addEvents])
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteEvent(id)
@@ -281,6 +296,12 @@ export default function HomePage() {
         />
       )}
 
+      {/* お知らせバナー */}
+      <AnnouncementBanner
+        announcements={announcements}
+        onOpenAdmin={() => setAnnouncementAdminOpen(true)}
+      />
+
       {/* Group leader tabs */}
       <GroupLeaderTabs
         selected={selectedLeaderId}
@@ -361,6 +382,7 @@ export default function HomePage() {
         preselectedLeaderId={preselectedLeaderId}
         onClose={closeEventModal}
         onSave={handleSave}
+        onSaveBulk={handleSaveBulk}
         onDelete={handleDelete}
         onOpenFacilityManager={openFacilityManager}
       />
@@ -372,6 +394,16 @@ export default function HomePage() {
         onClose={() => setFacilityManagerOpen(false)}
         onAdd={addFacility}
         onDeactivate={deactivateFacility}
+      />
+
+      {/* お知らせ管理モーダル */}
+      <AnnouncementAdmin
+        isOpen={announcementAdminOpen}
+        announcements={announcements}
+        onClose={() => setAnnouncementAdminOpen(false)}
+        onAdd={addAnnouncement}
+        onUpdate={updateAnnouncement}
+        onDelete={deleteAnnouncement}
       />
 
       {/* Group manager modal */}
