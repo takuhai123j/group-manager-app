@@ -36,6 +36,33 @@ export function EventBadge({
   const manager = managers.find(m => m.id === event.groupLeaderId)
   const isOutside = isOutsideFacility(event.groupLeaderId, event.facilityId, managerFacilities)
 
+  const facilityDisplay = !event.isAllDay ? (event.facilityName || '施設未設定') : null
+
+  const badgeContent = (
+    <span className="flex items-center gap-1 min-w-0">
+      {isOutside && (
+        <span className="shrink-0 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 font-bold leading-none border border-amber-300">
+          外
+        </span>
+      )}
+      <span className="truncate min-w-0">
+        {event.isAllDay ? (
+          <span>{event.title}</span>
+        ) : compact ? (
+          <>
+            <span className="font-medium">{event.startTime} </span>
+            <span>{facilityDisplay}｜{event.title}</span>
+          </>
+        ) : (
+          <>
+            <span className="font-medium">{event.startTime} </span>
+            <span>{event.title}</span>
+          </>
+        )}
+      </span>
+    </span>
+  )
+
   if (colorMode === 'leader') {
     const style = getManagerColorStyle(manager?.color ?? '#6B7280')
     return (
@@ -47,17 +74,7 @@ export function EventBadge({
           compact ? 'text-xs px-1 py-0.5' : 'text-xs px-1.5 py-1'
         )}
       >
-        <span className="flex items-center gap-1 min-w-0">
-          {isOutside && (
-            <span className="shrink-0 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 font-bold leading-none border border-amber-300">
-              外
-            </span>
-          )}
-          <span className="truncate min-w-0">
-            {!event.isAllDay && <span className="font-medium">{event.startTime} </span>}
-            <span>{event.title}</span>
-          </span>
-        </span>
+        {badgeContent}
       </button>
     )
   }
@@ -71,17 +88,7 @@ export function EventBadge({
         compact ? 'text-xs px-1 py-0.5' : 'text-xs px-1.5 py-1'
       )}
     >
-      <span className="flex items-center gap-1 min-w-0">
-        {isOutside && (
-          <span className="shrink-0 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 font-bold leading-none border border-amber-300">
-            外
-          </span>
-        )}
-        <span className="truncate min-w-0">
-          {!event.isAllDay && <span className="font-medium">{event.startTime} </span>}
-          <span>{event.title}</span>
-        </span>
-      </span>
+      {badgeContent}
     </button>
   )
 }
