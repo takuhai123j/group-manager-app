@@ -7,6 +7,7 @@ import {
 } from '@/lib/utils'
 import { getHolidayName } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
+import { formatEventDisplay } from '@/lib/eventDisplay'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
 interface DayViewProps {
@@ -79,7 +80,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                   cardClass
                 )}
               >
-                {typeConfig.label}｜{event.groupLeaderName}
+                {formatEventDisplay(event, 'day')}
               </button>
             )
           })}
@@ -153,20 +154,31 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                     cardClass
                   )}
                 >
-                  {/* Title + type badge */}
-                  <div className="flex items-start justify-between gap-1">
-                    <p className="text-sm font-semibold truncate leading-snug">{event.title}</p>
-                    {event.columnCount === 1 && (
-                      <span className={cn(
-                        'text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 border',
-                        typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor
-                      )}>{typeConfig.label}</span>
-                    )}
-                  </div>
+                  {/* Type - 種別を常に最上部に表示 */}
+                  <p className="text-sm font-bold truncate leading-tight">
+                    【{typeConfig.label}】
+                  </p>
                   {/* Time */}
                   <p className="text-xs opacity-80 mt-0.5">{event.startTime}〜{event.endTime}</p>
-                  {/* Group leader */}
+                  {/* Facility + outside indicator */}
                   {height >= 44 && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className="text-xs opacity-70 truncate">
+                        📍 {event.facilityName || '施設未設定'}
+                      </p>
+                      {isOutside && (
+                        <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">
+                          担当外
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Title */}
+                  {height >= 60 && (
+                    <p className="text-xs font-medium truncate mt-0.5">{event.title}</p>
+                  )}
+                  {/* Group leader */}
+                  {height >= 76 && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <span
                         className="w-2 h-2 rounded-full flex-shrink-0"
@@ -175,23 +187,8 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                       <p className="text-xs opacity-70 truncate">{event.groupLeaderName}</p>
                     </div>
                   )}
-                  {/* Facility + outside indicator */}
-                  {height >= 60 && event.facilityName && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <p className="text-xs opacity-70 truncate">📍 {event.facilityName}</p>
-                      {isOutside && (
-                        <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">
-                          担当外
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {/* Type label (multi-column時) */}
-                  {height >= 76 && event.columnCount > 1 && (
-                    <p className="text-xs opacity-50 mt-0.5 truncate">[{typeConfig.label}]</p>
-                  )}
                   {/* Memo */}
-                  {height >= 100 && event.columnCount === 1 && event.memo && (
+                  {height >= 100 && event.memo && (
                     <p className="text-xs opacity-55 mt-0.5 truncate">📝 {event.memo}</p>
                   )}
                 </button>

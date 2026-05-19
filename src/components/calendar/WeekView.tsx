@@ -8,6 +8,7 @@ import {
 } from '@/lib/utils'
 import { getJapaneseHolidays } from '@/lib/holidays'
 import { getEventTypeConfig } from '@/constants/eventTypes'
+import { formatEventDisplay } from '@/lib/eventDisplay'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
 interface WeekViewProps {
@@ -97,7 +98,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                         cardClass
                       )}
                     >
-                      {event.title}
+                      {formatEventDisplay(event, 'week')}
                     </button>
                   )
                 })}
@@ -177,23 +178,25 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                         cardClass
                       )}
                     >
-                      <p className="text-xs font-semibold truncate leading-tight">{event.title}</p>
+                      <p className="text-xs font-semibold truncate leading-tight">
+                        【{typeConfig.label}】
+                      </p>
                       <p className="text-xs opacity-70 truncate leading-tight">
                         {event.startTime}〜{event.endTime}
                       </p>
                       {height >= 44 && (
-                        <p className="text-xs opacity-70 truncate leading-tight">{event.groupLeaderName}</p>
-                      )}
-                      {height >= 60 && event.facilityName && (
-                        <p className="text-xs opacity-60 truncate leading-tight">
-                          {event.facilityName}
+                        <p className="text-xs opacity-70 truncate leading-tight">
+                          {event.facilityName || '施設未設定'}
                           {isOutside && (
                             <span className="ml-1 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold">担当外</span>
                           )}
                         </p>
                       )}
+                      {height >= 60 && (
+                        <p className="text-xs opacity-70 truncate leading-tight">{event.title}</p>
+                      )}
                       {height >= 76 && (
-                        <p className="text-xs opacity-50 truncate leading-tight">[{typeConfig.label}]</p>
+                        <p className="text-xs opacity-50 truncate leading-tight">{event.groupLeaderName}</p>
                       )}
                     </button>
                   )
