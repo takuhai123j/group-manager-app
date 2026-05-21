@@ -36,7 +36,9 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
   const hasAnyAllDay = weekDays.some(d => getAllDayEvents(d).length > 0)
 
   return (
-    <div className="flex flex-col md:h-full md:overflow-hidden">
+    <div className="flex flex-col md:h-full md:overflow-hidden overflow-x-auto">
+      {/* スマホ横スクロール: min-wで7列×140px+時間列56px = 1036px を確保 */}
+      <div className="flex flex-col flex-1 min-w-[1036px] md:min-w-0">
       {/* Day headers */}
       <div className="flex border-b bg-gray-50 flex-shrink-0">
         <div className="w-14 sm:w-16 flex-shrink-0" />
@@ -185,7 +187,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                         {event.startTime}〜{event.endTime}
                       </p>
                       {height >= 44 && (
-                        <p className="text-xs opacity-70 truncate leading-tight">
+                        <p className="text-xs opacity-70 leading-tight">
                           {event.facilityName || '施設未設定'}
                           {isOutside && (
                             <span className="ml-1 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold">担当外</span>
@@ -193,7 +195,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                         </p>
                       )}
                       {height >= 60 && (
-                        <p className="text-xs opacity-70 truncate leading-tight">{event.title}</p>
+                        <p className="text-xs opacity-70 leading-tight">{event.title}</p>
                       )}
                       {height >= 76 && (
                         <p className="text-xs opacity-50 truncate leading-tight">{event.groupLeaderName}</p>
@@ -205,6 +207,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
             )
           })}
         </div>
+      </div>
       </div>
     </div>
   )
