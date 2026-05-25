@@ -91,3 +91,30 @@ export type CreateAnnouncementInput = {
 }
 
 export type UpdateAnnouncementInput = Partial<CreateAnnouncementInput>
+
+export type ShiftFileType = 'shift' | 'g_leader' | 'other'
+
+export const SHIFT_FILE_TYPE_LABELS: Record<ShiftFileType, string> = {
+  shift: '現場シフト',
+  g_leader: 'G長シフト',
+  other: 'その他資料',
+}
+
+export interface ShiftFile {
+  id: string
+  fileType: ShiftFileType
+  facilityId: string | null
+  facilityName: string | null
+  targetMonth: string      // YYYY-MM
+  fileName: string
+  filePath: string
+  memo: string
+  createdAt: string
+}
+
+export type CreateShiftFileInput = {
+  fileType: ShiftFileType
+  facilityId: string | null
+  targetMonth: string
+  memo: string
+}

@@ -171,6 +171,42 @@ CREATE POLICY "anon_all_announcements" ON announcements
   FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
 
 -- -------------------------------------------------------
+-- Shift Files（シフト表ファイル管理）
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS shift_files (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  file_type    TEXT        NOT NULL,
+  facility_id  UUID        REFERENCES facilities(id),
+  target_month TEXT        NOT NULL,
+  file_name    TEXT        NOT NULL,
+  file_path    TEXT        NOT NULL,
+  memo         TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shift_files_facility_id  ON shift_files(facility_id);
+CREATE INDEX IF NOT EXISTS idx_shift_files_target_month ON shift_files(target_month);
+CREATE INDEX IF NOT EXISTS idx_shift_files_file_type    ON shift_files(file_type);
+
+ALTER TABLE shift_files ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_shift_files" ON shift_files;
+CREATE POLICY "anon_all_shift_files" ON shift_files
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- Storage: shift-files バケット作成
+-- ※ Supabase Dashboard > SQL Editor で実行してください
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('shift-files', 'shift-files', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "anon_all_shift_files_objects" ON storage.objects;
+CREATE POLICY "anon_all_shift_files_objects" ON storage.objects
+  FOR ALL TO anon
+  USING (bucket_id = 'shift-files')
+  WITH CHECK (bucket_id = 'shift-files');
+
+-- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）
 -- -------------------------------------------------------
 -- ALTER TABLE group_managers ADD COLUMN IF NOT EXISTS org_id UUID;

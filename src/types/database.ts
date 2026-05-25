@@ -192,6 +192,46 @@ export type Database = {
           },
         ]
       }
+      shift_files: {
+        Row: {
+          id: string
+          file_type: string
+          facility_id: string | null
+          target_month: string
+          file_name: string
+          file_path: string
+          memo: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          file_type: string
+          facility_id?: string | null
+          target_month: string
+          file_name: string
+          file_path: string
+          memo?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          file_type?: string
+          facility_id?: string | null
+          target_month?: string
+          file_name?: string
+          file_path?: string
+          memo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'shift_files_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Plus, Building2, Users } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
 
@@ -14,6 +14,7 @@ interface CalendarHeaderProps {
   onAddEvent: () => void
   onOpenGroupManager: () => void
   onOpenFacilityManager: () => void
+  onOpenShiftManager: () => void
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = { month: '月', week: '週', day: '日' }
@@ -27,7 +28,7 @@ function getTitle(date: Date, view: CalendarView): string {
 export function CalendarHeader({
   currentDate, view,
   onPrev, onNext, onToday, onChangeView, onAddEvent,
-  onOpenGroupManager, onOpenFacilityManager,
+  onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
 }: CalendarHeaderProps) {
   return (
     <header className="bg-white border-b px-3 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -50,6 +51,16 @@ export function CalendarHeader({
 
       {/* Right: master buttons + view switcher + add */}
       <div className="flex items-center gap-1.5">
+        {/* PDF資料 */}
+        <button
+          onClick={onOpenShiftManager}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
+          title="PDF資料"
+        >
+          <FileText size={15} />
+          <span className="hidden sm:inline">PDF資料</span>
+        </button>
+
         {/* G長管理 */}
         <button
           onClick={onOpenGroupManager}

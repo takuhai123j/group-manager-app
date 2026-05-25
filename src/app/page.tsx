@@ -9,6 +9,7 @@ import { useFacilities } from '@/hooks/useFacilities'
 import { useGroupManagers } from '@/hooks/useGroupManagers'
 import { useManagerFacilities } from '@/hooks/useManagerFacilities'
 import { useAnnouncements } from '@/hooks/useAnnouncements'
+import { useShiftFiles } from '@/hooks/useShiftFiles'
 import { GroupLeaderTabs, ALL_LEADER_ID } from '@/components/GroupLeaderTabs'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
@@ -20,6 +21,7 @@ import { FacilityManager } from '@/components/facilities/FacilityManager'
 import { GroupManagerModal } from '@/components/managers/GroupManagerModal'
 import { AnnouncementBanner } from '@/components/announcements/AnnouncementBanner'
 import { AnnouncementAdmin } from '@/components/announcements/AnnouncementAdmin'
+import { ShiftFileManager } from '@/components/shifts/ShiftFileManager'
 import {
   hasLocalStorageData,
   migrateToSupabase,
@@ -134,6 +136,13 @@ export default function HomePage() {
     deleteAnnouncement,
   } = useAnnouncements()
 
+  const {
+    files: shiftFiles,
+    loading: shiftFilesLoading,
+    upload: uploadShiftFile,
+    remove: removeShiftFile,
+  } = useShiftFiles()
+
   const loading = eventsLoading || facilitiesLoading || managersLoading || managerFacilitiesLoading
   const loadError = eventsError ?? facilitiesError ?? managersError
 
@@ -172,6 +181,7 @@ export default function HomePage() {
   const [facilityManagerOpen, setFacilityManagerOpen] = useState(false)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
   const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
+  const [shiftManagerOpen, setShiftManagerOpen] = useState(false)
 
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
@@ -320,6 +330,7 @@ export default function HomePage() {
         onAddEvent={() => openAdd()}
         onOpenGroupManager={openGroupManager}
         onOpenFacilityManager={openFacilityManager}
+        onOpenShiftManager={() => setShiftManagerOpen(true)}
       />
 
       {/* Filter bar */}
@@ -404,6 +415,17 @@ export default function HomePage() {
         onAdd={addAnnouncement}
         onUpdate={updateAnnouncement}
         onDelete={deleteAnnouncement}
+      />
+
+      {/* シフト表管理 */}
+      <ShiftFileManager
+        isOpen={shiftManagerOpen}
+        files={shiftFiles}
+        loading={shiftFilesLoading}
+        facilities={allFacilities}
+        onClose={() => setShiftManagerOpen(false)}
+        onUpload={uploadShiftFile}
+        onDelete={removeShiftFile}
       />
 
       {/* Group manager modal */}
