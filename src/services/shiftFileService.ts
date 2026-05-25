@@ -42,7 +42,7 @@ export const shiftFileService = {
 
   async upload(file: File, input: CreateShiftFileInput): Promise<ShiftFile> {
     const supabase = createClient()
-    const filePath = `${input.targetMonth}/${Date.now()}-${file.name}`
+    const filePath = `${input.targetMonth}/${Date.now()}.pdf`
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
