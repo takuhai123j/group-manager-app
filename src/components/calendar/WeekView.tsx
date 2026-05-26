@@ -38,7 +38,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
   return (
     <div className="flex flex-col md:h-full md:overflow-hidden overflow-x-auto">
       {/* スマホ横スクロール: min-wで7列×140px+時間列56px = 1036px を確保 */}
-      <div className="flex flex-col flex-1 min-w-[1036px] md:min-w-0">
+      <div className="flex flex-col flex-1 min-w-[1036px] md:min-w-0 md:min-h-0">
       {/* Day headers */}
       <div className="flex border-b bg-gray-50 flex-shrink-0">
         <div className="w-14 sm:w-16 flex-shrink-0" />
@@ -111,7 +111,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
       )}
 
       {/* Time grid */}
-      <div className="flex-1 md:overflow-y-auto">
+      <div className="flex-1 min-h-0 md:overflow-y-auto">
         <div className="flex">
           {/* Time labels */}
           <div className="w-14 sm:w-16 flex-shrink-0 relative">
