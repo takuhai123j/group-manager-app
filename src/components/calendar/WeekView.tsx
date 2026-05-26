@@ -112,7 +112,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
 
       {/* Time grid */}
       <div className="flex-1 min-h-0 md:overflow-y-auto">
-        <div className="flex">
+        <div className="flex pt-3">
           {/* Time labels */}
           <div className="w-14 sm:w-16 flex-shrink-0 relative">
             {TIME_LABELS.map(t => (
