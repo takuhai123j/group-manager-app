@@ -10,7 +10,7 @@ import { useGroupManagers } from '@/hooks/useGroupManagers'
 import { useManagerFacilities } from '@/hooks/useManagerFacilities'
 import { useAnnouncements } from '@/hooks/useAnnouncements'
 import { useShiftFiles } from '@/hooks/useShiftFiles'
-import { GroupLeaderTabs, ALL_LEADER_ID } from '@/components/GroupLeaderTabs'
+import { StaffTabs, type RoleTab, ALL_PERSON_ID } from '@/components/StaffTabs'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
 import { MonthView } from '@/components/calendar/MonthView'
@@ -147,6 +147,7 @@ export default function HomePage() {
 
   const {
     members: leaderMembers,
+    activeMembers: activeLeaders,
     addMember: addLeader,
     updateMember: updateLeader,
     toggleActive: toggleLeaderActive,
@@ -156,6 +157,7 @@ export default function HomePage() {
 
   const {
     members: rounderMembers,
+    activeMembers: activeRounders,
     addMember: addRounder,
     updateMember: updateRounder,
     toggleActive: toggleRounderActive,
@@ -165,6 +167,7 @@ export default function HomePage() {
 
   const {
     members: fieldEmployeeMembers,
+    activeMembers: activeFieldEmployees,
     addMember: addFieldEmployee,
     updateMember: updateFieldEmployee,
     toggleActive: toggleFieldEmployeeActive,
@@ -199,9 +202,20 @@ export default function HomePage() {
     setShowMigration(false)
   }
 
-  // ── 選択中のG長タブ ──────────────────────────────────────────────
-  const [selectedLeaderId, setSelectedLeaderId] = useState<string>(ALL_LEADER_ID)
-  const colorMode: ColorMode = selectedLeaderId === ALL_LEADER_ID ? 'leader' : 'type'
+  // ── 表示切替タブ ─────────────────────────────────────────────────
+  const [selectedRole, setSelectedRole] = useState<RoleTab>('all')
+  const [selectedPersonId, setSelectedPersonId] = useState<string>(ALL_PERSON_ID)
+
+  const handleRoleChange = useCallback((role: RoleTab) => {
+    setSelectedRole(role)
+    setSelectedPersonId(ALL_PERSON_ID)
+  }, [])
+
+  const colorMode: ColorMode =
+    selectedRole === 'all' ||
+    (selectedRole === 'group_manager' && selectedPersonId === ALL_PERSON_ID)
+      ? 'leader'
+      : 'type'
 
   // ── モーダル状態 ─────────────────────────────────────────────────
   const [eventModalOpen, setEventModalOpen] = useState(false)
@@ -219,16 +233,29 @@ export default function HomePage() {
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
 
   const filteredEvents = useMemo(() => events.filter(event => {
-    const leaderMatch = selectedLeaderId === ALL_LEADER_ID || event.groupLeaderId === selectedLeaderId
+    let personMatch: boolean
+    if (selectedRole === 'all') {
+      personMatch = true
+    } else if (selectedRole === 'group_manager') {
+      personMatch = selectedPersonId === ALL_PERSON_ID || event.groupLeaderId === selectedPersonId
+    } else {
+      // leader / rounder / field_employee: 予定データ未連携のため非表示
+      personMatch = false
+    }
     const typeMatch = filters.types.length === 0 || filters.types.includes(event.type)
     const facilityMatch = filters.facilities.length === 0 || filters.facilities.includes(event.facilityName)
-    return leaderMatch && typeMatch && facilityMatch
-  }), [events, selectedLeaderId, filters])
+    return personMatch && typeMatch && facilityMatch
+  }), [events, selectedRole, selectedPersonId, filters])
 
-  const leaderBaseCount = useMemo(() =>
-    events.filter(e => selectedLeaderId === ALL_LEADER_ID || e.groupLeaderId === selectedLeaderId).length,
-    [events, selectedLeaderId]
-  )
+  const leaderBaseCount = useMemo(() => {
+    if (selectedRole === 'all') return events.length
+    if (selectedRole === 'group_manager') {
+      return events.filter(e =>
+        selectedPersonId === ALL_PERSON_ID || e.groupLeaderId === selectedPersonId
+      ).length
+    }
+    return 0
+  }, [events, selectedRole, selectedPersonId])
 
   // ── モーダルヘルパー ─────────────────────────────────────────────
   const openAdd = useCallback((date?: Date) => {
@@ -278,7 +305,10 @@ export default function HomePage() {
     setEventModalOpen(false); setGroupManagerOpen(true)
   }, [])
 
-  const preselectedLeaderId = selectedLeaderId !== ALL_LEADER_ID ? selectedLeaderId : undefined
+  const preselectedLeaderId =
+    selectedRole === 'group_manager' && selectedPersonId !== ALL_PERSON_ID
+      ? selectedPersonId
+      : undefined
 
   // ── ローディング画面 ─────────────────────────────────────────────
   if (loading) {
@@ -315,7 +345,7 @@ export default function HomePage() {
         </div>
         <div className="text-xs text-blue-200 text-right">
           <p>全{events.length}件</p>
-          {(selectedLeaderId !== ALL_LEADER_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
+          {(selectedRole !== 'all' || selectedPersonId !== ALL_PERSON_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
             <p className="text-blue-300">表示{filteredEvents.length}件</p>
           )}
         </div>
@@ -344,11 +374,16 @@ export default function HomePage() {
         onOpenAdmin={() => setAnnouncementAdminOpen(true)}
       />
 
-      {/* Group leader tabs */}
-      <GroupLeaderTabs
-        selected={selectedLeaderId}
+      {/* 職種タブ + 個人タブ */}
+      <StaffTabs
+        selectedRole={selectedRole}
+        selectedPersonId={selectedPersonId}
         activeManagers={activeManagers}
-        onChange={setSelectedLeaderId}
+        activeLeaders={activeLeaders}
+        activeRounders={activeRounders}
+        activeFieldEmployees={activeFieldEmployees}
+        onRoleChange={handleRoleChange}
+        onPersonChange={setSelectedPersonId}
       />
 
       {/* Calendar header */}
