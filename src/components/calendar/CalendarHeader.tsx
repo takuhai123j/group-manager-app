@@ -1,6 +1,7 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
 
@@ -15,6 +16,9 @@ interface CalendarHeaderProps {
   onOpenGroupManager: () => void
   onOpenFacilityManager: () => void
   onOpenShiftManager: () => void
+  onOpenLeaderManager: () => void
+  onOpenRounderManager: () => void
+  onOpenFieldEmployeeManager: () => void
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = { month: '月', week: '週', day: '日' }
@@ -29,7 +33,32 @@ export function CalendarHeader({
   currentDate, view,
   onPrev, onNext, onToday, onChangeView, onAddEvent,
   onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
+  onOpenLeaderManager, onOpenRounderManager, onOpenFieldEmployeeManager,
 }: CalendarHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    if (menuOpen) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
+
+  const closeMenu = () => setMenuOpen(false)
+
+  const menuItems: Array<{ label: string; icon: React.ReactNode; onClick: () => void } | null> = [
+    { label: 'G長管理',    icon: <Users size={14} />,     onClick: () => { onOpenGroupManager(); closeMenu() } },
+    { label: 'リーダー管理',   icon: <Users size={14} />,     onClick: () => { onOpenLeaderManager(); closeMenu() } },
+    { label: 'ラウンダー管理',  icon: <Users size={14} />,     onClick: () => { onOpenRounderManager(); closeMenu() } },
+    { label: '現場社員管理',   icon: <Users size={14} />,     onClick: () => { onOpenFieldEmployeeManager(); closeMenu() } },
+    null,
+    { label: '施設管理',    icon: <Building2 size={14} />, onClick: () => { onOpenFacilityManager(); closeMenu() } },
+  ]
+
   return (
     <header className="bg-white border-b px-3 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       {/* Left: nav + title */}
@@ -49,7 +78,7 @@ export function CalendarHeader({
         </h1>
       </div>
 
-      {/* Right: master buttons + view switcher + add */}
+      {/* Right: PDF + 管理ドロップダウン + view switcher + add */}
       <div className="flex items-center gap-1.5">
         {/* PDF資料 */}
         <button
@@ -61,25 +90,40 @@ export function CalendarHeader({
           <span className="hidden sm:inline">PDF資料</span>
         </button>
 
-        {/* G長管理 */}
-        <button
-          onClick={onOpenGroupManager}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition-colors"
-          title="G長マスタ管理"
-        >
-          <Users size={15} />
-          <span className="hidden sm:inline">G長管理</span>
-        </button>
+        {/* 管理ドロップダウン */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen(prev => !prev)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition-colors"
+            title="マスタ管理"
+          >
+            <Users size={15} />
+            <span className="hidden sm:inline">管理</span>
+            <ChevronDown
+              size={14}
+              className={cn('transition-transform duration-150', menuOpen && 'rotate-180')}
+            />
+          </button>
 
-        {/* 施設管理 */}
-        <button
-          onClick={onOpenFacilityManager}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition-colors"
-          title="施設マスタ管理"
-        >
-          <Building2 size={15} />
-          <span className="hidden sm:inline">施設管理</span>
-        </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-lg border border-gray-200 z-50 py-1 overflow-hidden">
+              {menuItems.map((item, i) =>
+                item === null ? (
+                  <div key={`divider-${i}`} className="my-1 border-t border-gray-100" />
+                ) : (
+                  <button
+                    key={item.label}
+                    onClick={item.onClick}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <span className="text-gray-400 flex-shrink-0">{item.icon}</span>
+                    {item.label}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+        </div>
 
         {/* View switcher */}
         <div className="flex rounded-lg border border-gray-300 overflow-hidden">

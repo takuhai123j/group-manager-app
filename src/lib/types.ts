@@ -118,3 +118,29 @@ export type CreateShiftFileInput = {
   targetMonth: string
   memo: string
 }
+
+export type StaffRole = 'leader' | 'rounder' | 'field_employee'
+
+export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
+  leader: 'リーダー',
+  rounder: 'ラウンダー',
+  field_employee: '現場社員',
+}
+
+export interface StaffMember {
+  id: string
+  name: string
+  role: StaffRole
+  color: string
+  memo: string
+  active: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type StaffMemberInput = {
+  name: string
+  color: string
+  memo: string
+}

@@ -22,6 +22,8 @@ import { GroupManagerModal } from '@/components/managers/GroupManagerModal'
 import { AnnouncementBanner } from '@/components/announcements/AnnouncementBanner'
 import { AnnouncementAdmin } from '@/components/announcements/AnnouncementAdmin'
 import { ShiftFileManager } from '@/components/shifts/ShiftFileManager'
+import { StaffMemberModal } from '@/components/staff/StaffMemberModal'
+import { useStaffMembers } from '@/hooks/useStaffMembers'
 import {
   hasLocalStorageData,
   migrateToSupabase,
@@ -143,6 +145,33 @@ export default function HomePage() {
     remove: removeShiftFile,
   } = useShiftFiles()
 
+  const {
+    members: leaderMembers,
+    addMember: addLeader,
+    updateMember: updateLeader,
+    toggleActive: toggleLeaderActive,
+    moveUp: moveLeaderUp,
+    moveDown: moveLeaderDown,
+  } = useStaffMembers('leader')
+
+  const {
+    members: rounderMembers,
+    addMember: addRounder,
+    updateMember: updateRounder,
+    toggleActive: toggleRounderActive,
+    moveUp: moveRounderUp,
+    moveDown: moveRounderDown,
+  } = useStaffMembers('rounder')
+
+  const {
+    members: fieldEmployeeMembers,
+    addMember: addFieldEmployee,
+    updateMember: updateFieldEmployee,
+    toggleActive: toggleFieldEmployeeActive,
+    moveUp: moveFieldEmployeeUp,
+    moveDown: moveFieldEmployeeDown,
+  } = useStaffMembers('field_employee')
+
   const loading = eventsLoading || facilitiesLoading || managersLoading || managerFacilitiesLoading
   const loadError = eventsError ?? facilitiesError ?? managersError
 
@@ -182,6 +211,9 @@ export default function HomePage() {
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
   const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
   const [shiftManagerOpen, setShiftManagerOpen] = useState(false)
+  const [leaderManagerOpen, setLeaderManagerOpen] = useState(false)
+  const [rounderManagerOpen, setRounderManagerOpen] = useState(false)
+  const [fieldEmployeeManagerOpen, setFieldEmployeeManagerOpen] = useState(false)
 
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
@@ -276,7 +308,7 @@ export default function HomePage() {
       {/* App bar */}
       <div className="bg-blue-700 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
         <div>
-          <h1 className="text-base font-bold leading-tight">グループ長スケジュール管理</h1>
+          <h1 className="text-base font-bold leading-tight">イートハピネス総合スケジュール管理アプリ</h1>
           <p className="text-xs text-blue-200 leading-tight">
             {formatJa(new Date(), 'yyyy年M月d日（EEE）')}
           </p>
@@ -331,6 +363,9 @@ export default function HomePage() {
         onOpenGroupManager={openGroupManager}
         onOpenFacilityManager={openFacilityManager}
         onOpenShiftManager={() => setShiftManagerOpen(true)}
+        onOpenLeaderManager={() => setLeaderManagerOpen(true)}
+        onOpenRounderManager={() => setRounderManagerOpen(true)}
+        onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
       />
 
       {/* Filter bar */}
@@ -426,6 +461,45 @@ export default function HomePage() {
         onClose={() => setShiftManagerOpen(false)}
         onUpload={uploadShiftFile}
         onDelete={removeShiftFile}
+      />
+
+      {/* リーダー管理モーダル */}
+      <StaffMemberModal
+        isOpen={leaderManagerOpen}
+        role="leader"
+        members={leaderMembers}
+        onClose={() => setLeaderManagerOpen(false)}
+        onAdd={addLeader}
+        onUpdate={updateLeader}
+        onToggleActive={toggleLeaderActive}
+        onMoveUp={moveLeaderUp}
+        onMoveDown={moveLeaderDown}
+      />
+
+      {/* ラウンダー管理モーダル */}
+      <StaffMemberModal
+        isOpen={rounderManagerOpen}
+        role="rounder"
+        members={rounderMembers}
+        onClose={() => setRounderManagerOpen(false)}
+        onAdd={addRounder}
+        onUpdate={updateRounder}
+        onToggleActive={toggleRounderActive}
+        onMoveUp={moveRounderUp}
+        onMoveDown={moveRounderDown}
+      />
+
+      {/* 現場社員管理モーダル */}
+      <StaffMemberModal
+        isOpen={fieldEmployeeManagerOpen}
+        role="field_employee"
+        members={fieldEmployeeMembers}
+        onClose={() => setFieldEmployeeManagerOpen(false)}
+        onAdd={addFieldEmployee}
+        onUpdate={updateFieldEmployee}
+        onToggleActive={toggleFieldEmployeeActive}
+        onMoveUp={moveFieldEmployeeUp}
+        onMoveDown={moveFieldEmployeeDown}
       />
 
       {/* Group manager modal */}

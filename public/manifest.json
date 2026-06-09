@@ -1,7 +1,7 @@
 {
-  "name": "グループ長スケジュール管理",
-  "short_name": "G長スケジュール",
-  "description": "給食会社グループ長向けスケジュール管理アプリ",
+  "name": "イートハピネス総合スケジュール管理アプリ",
+  "short_name": "EH総合スケジュール",
+  "description": "イートハピネス 総合スケジュール管理アプリ",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

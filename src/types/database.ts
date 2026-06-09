@@ -192,6 +192,41 @@ export type Database = {
           },
         ]
       }
+      staff_members: {
+        Row: {
+          id: string
+          name: string
+          role: string
+          color: string
+          memo: string
+          active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          role: string
+          color?: string
+          memo?: string
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          role?: string
+          color?: string
+          memo?: string
+          active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       shift_files: {
         Row: {
           id: string

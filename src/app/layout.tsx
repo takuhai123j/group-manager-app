@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'グループ長スケジュール管理',
-  description: '給食会社グループ長向けスケジュール管理アプリ',
+  title: 'イートハピネス総合スケジュール管理アプリ',
+  description: 'イートハピネス 総合スケジュール管理アプリ',
   manifest: '/manifest.json',
   icons: {
     icon: [
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'G長スケジュール',
+    title: 'EH総合スケジュール',
     startupImage: '/apple-touch-icon.png',
   },
 }

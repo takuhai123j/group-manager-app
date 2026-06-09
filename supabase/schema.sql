@@ -1,5 +1,5 @@
 -- ============================================================
--- グループ長スケジュール管理アプリ - Supabase Schema v2
+-- イートハピネス総合スケジュール管理アプリ - Supabase Schema v2
 -- ============================================================
 -- 実行方法: Supabase Dashboard > SQL Editor に貼り付けて実行
 -- ============================================================
@@ -205,6 +205,37 @@ CREATE POLICY "anon_all_shift_files_objects" ON storage.objects
   FOR ALL TO anon
   USING (bucket_id = 'shift-files')
   WITH CHECK (bucket_id = 'shift-files');
+
+-- -------------------------------------------------------
+-- Staff Members（スタッフマスタ: リーダー・ラウンダー・現場社員）
+-- role: 'leader' | 'rounder' | 'field_employee'
+-- group_managers テーブルとは独立。既存G長予定に影響しない。
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS staff_members (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT        NOT NULL,
+  role        TEXT        NOT NULL,
+  color       TEXT        NOT NULL DEFAULT '#4F46E5',
+  memo        TEXT        NOT NULL DEFAULT '',
+  active      BOOLEAN     NOT NULL DEFAULT TRUE,
+  sort_order  INTEGER     NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT staff_members_role_check CHECK (role IN ('leader', 'rounder', 'field_employee'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_members_role ON staff_members(role);
+
+DROP TRIGGER IF EXISTS trg_staff_members_updated_at ON staff_members;
+CREATE TRIGGER trg_staff_members_updated_at
+  BEFORE UPDATE ON staff_members
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE staff_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_staff_members" ON staff_members;
+CREATE POLICY "anon_all_staff_members" ON staff_members
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
 
 -- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）
