@@ -7,7 +7,7 @@ import {
   computeEventColumns,
 } from '@/lib/utils'
 import { getJapaneseHolidays } from '@/lib/holidays'
-import { getEventTypeConfig } from '@/constants/eventTypes'
+import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
 import { formatEventDisplay } from '@/lib/eventDisplay'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
@@ -188,8 +188,8 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                       </p>
                       {height >= 44 && (
                         <p className="text-xs opacity-70 leading-tight">
-                          {event.facilityName || '施設未設定'}
-                          {isOutside && (
+                          {isHalfDayType(event.type) ? event.groupLeaderName : (event.facilityName || '施設未設定')}
+                          {isOutside && !isHalfDayType(event.type) && (
                             <span className="ml-1 text-[9px] px-0.5 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold">担当外</span>
                           )}
                         </p>

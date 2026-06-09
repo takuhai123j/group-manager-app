@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Trash2, Save, Building2, CalendarDays, Plus, ChevronLeft } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString, formatJa } from '@/lib/utils'
-import { EVENT_TYPES, isAllDayType } from '@/constants/eventTypes'
+import { EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime } from '@/constants/eventTypes'
 import type { ScheduleEvent, CreateEventInput, EventType, GroupManager, Facility } from '@/lib/types'
 
 interface EventModalProps {
@@ -37,6 +37,7 @@ interface FormState {
 }
 
 const TIME_SLOTS = generateTimeSlots(6, 22)
+const HALF_DAY_TIME_SLOTS = generateTimeSlots(6, 20)
 
 const defaultForm = (date?: Date, leaderId?: string): FormState => ({
   title: '',
@@ -102,6 +103,7 @@ export function EventModal({
   const [bulkSaving, setBulkSaving] = useState(false)
 
   const isAllDay = isAllDayType(form.type)
+  const isHalfDay = isHalfDayType(form.type)
   const showBulkMode = isAllDay && !editingEvent
 
   useEffect(() => {
@@ -132,12 +134,13 @@ export function EventModal({
     const e: Partial<Record<keyof FormState, string>> = {}
     if (!form.title.trim()) e.title = 'タイトルを入力してください'
     if (bulkMode === 'single' && !form.date) e.date = '日付を選択してください'
-    if (!isAllDay) {
+    if (!isAllDay && !isHalfDay) {
       if (!form.date) e.date = '日付を選択してください'
       if (!form.startTime) e.startTime = '開始時間を選択してください'
       if (!form.endTime) e.endTime = '終了時間を選択してください'
       if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
     }
+    if (isHalfDay && !form.startTime) e.startTime = '開始時間を選択してください'
     if (!form.groupLeaderId) e.groupLeaderId = '担当G長を選択してください'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -189,7 +192,7 @@ export function EventModal({
         date,
         startTime: isAllDay ? '00:00' : form.startTime,
         endTime: isAllDay ? '00:00' : form.endTime,
-        facilityId: isAllDay ? null : (form.facilityId || null),
+        facilityId: (isAllDay || isHalfDay) ? null : (form.facilityId || null),
         type: form.type,
         isAllDay,
         memo: form.memo.trim(),
@@ -244,19 +247,37 @@ export function EventModal({
 
   const handleTypeChange = (type: EventType) => {
     const newConfig = EVENT_TYPES.find(t => t.value === type)
-    const currentAllDayLabels = EVENT_TYPES.filter(t => isAllDayType(t.value)).map(t => t.label)
-    const shouldAutoFill = isAllDayType(type) &&
-      (form.title === '' || currentAllDayLabels.includes(form.title))
-    setForm(prev => ({
-      ...prev,
-      type,
-      title: shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title,
-    }))
+    const autoTitleLabels = EVENT_TYPES.filter(t => isAllDayType(t.value) || isHalfDayType(t.value)).map(t => t.label)
+    const shouldAutoFill = (isAllDayType(type) || isHalfDayType(type)) &&
+      (form.title === '' || autoTitleLabels.includes(form.title))
+    setForm(prev => {
+      let startTime = prev.startTime
+      let endTime = prev.endTime
+      if (isHalfDayType(type)) {
+        const [h, m] = startTime.split(':').map(Number)
+        const clampedH = Math.min(h, 20)
+        startTime = `${String(clampedH).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+        endTime = computeHalfDayEndTime(startTime)
+      }
+      return {
+        ...prev,
+        type,
+        startTime,
+        endTime,
+        title: shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title,
+      }
+    })
     setErrors(prev => ({ ...prev, type: undefined, title: undefined }))
     if (!isAllDayType(type)) {
       setBulkMode('single')
       setShowBulkConfirm(false)
     }
+  }
+
+  const handleHalfDayStartChange = (startTime: string) => {
+    const endTime = computeHalfDayEndTime(startTime)
+    setForm(prev => ({ ...prev, startTime, endTime }))
+    setErrors(prev => ({ ...prev, startTime: undefined }))
   }
 
   if (!isOpen) return null
@@ -596,6 +617,32 @@ export function EventModal({
               <CalendarDays size={16} className="flex-shrink-0 text-slate-400" />
               <span className="font-medium">全日予定（時間指定なし）</span>
             </div>
+          ) : isHalfDay ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  開始時間 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.startTime}
+                  onChange={e => handleHalfDayStartChange(e.target.value)}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
+                    errors.startTime ? 'border-red-400' : 'border-gray-300'
+                  )}
+                >
+                  {HALF_DAY_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {errors.startTime && <p className="mt-1 text-xs text-red-500">{errors.startTime}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">終了時間</label>
+                <div className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-gray-500 flex items-center justify-between">
+                  <span className="font-medium text-gray-700">{form.endTime}</span>
+                  <span className="text-xs text-indigo-500 ml-1">（自動）</span>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -633,8 +680,8 @@ export function EventModal({
             </div>
           )}
 
-          {/* Facility (timed events only) */}
-          {!isAllDay && (
+          {/* Facility (timed events only, not for half-day) */}
+          {!isAllDay && !isHalfDay && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-sm font-medium text-gray-700">施設名</label>

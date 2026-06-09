@@ -6,7 +6,7 @@ import {
   computeEventColumns,
 } from '@/lib/utils'
 import { getHolidayName } from '@/lib/holidays'
-import { getEventTypeConfig } from '@/constants/eventTypes'
+import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
 import { formatEventDisplay } from '@/lib/eventDisplay'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
 
@@ -164,9 +164,9 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                   {height >= 44 && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <p className="text-xs opacity-70 truncate">
-                        📍 {event.facilityName || '施設未設定'}
+                        {isHalfDayType(event.type) ? `👤 ${event.groupLeaderName}` : `📍 ${event.facilityName || '施設未設定'}`}
                       </p>
-                      {isOutside && (
+                      {isOutside && !isHalfDayType(event.type) && (
                         <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">
                           担当外
                         </span>

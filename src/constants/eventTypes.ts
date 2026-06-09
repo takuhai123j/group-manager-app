@@ -102,6 +102,15 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     solidBg: '#14B8A6',
   },
   {
+    value: 'hankyuu',
+    label: '半休',
+    bgColor: 'bg-indigo-100',
+    textColor: 'text-indigo-800',
+    borderColor: 'border-indigo-300',
+    dotColor: 'bg-indigo-500',
+    solidBg: '#6366F1',
+  },
+  {
     value: 'other',
     label: 'その他',
     bgColor: 'bg-yellow-100',
@@ -122,4 +131,19 @@ export const ALL_DAY_EVENT_TYPES: EventType[] = ['kyukyu', 'yukyu']
 /** 指定種別が全日予定かどうかを返す */
 export function isAllDayType(type: EventType): boolean {
   return ALL_DAY_EVENT_TYPES.includes(type)
+}
+
+/** 半休として扱う種別の一覧（時間指定・開始時間+4時間） */
+export const HALF_DAY_EVENT_TYPES: EventType[] = ['hankyuu']
+
+/** 指定種別が半休かどうかを返す */
+export function isHalfDayType(type: EventType): boolean {
+  return HALF_DAY_EVENT_TYPES.includes(type)
+}
+
+/** 半休の終了時間を開始時間+4時間で返す */
+export function computeHalfDayEndTime(startTime: string): string {
+  const [h, m] = startTime.split(':').map(Number)
+  const endH = h + 4
+  return `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }

@@ -1,5 +1,5 @@
 import type { CalendarView, ScheduleEvent } from '@/lib/types'
-import { getEventTypeConfig } from '@/constants/eventTypes'
+import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
 
 /**
  * カレンダー表示用のイベントテキストを生成する共通関数
@@ -14,6 +14,14 @@ export function formatEventDisplay(event: ScheduleEvent, viewType: CalendarView)
 
   if (event.isAllDay) {
     return `${typeTag}${event.groupLeaderName}`
+  }
+
+  if (isHalfDayType(event.type)) {
+    const timePrefix = event.startTime ?? ''
+    if (viewType === 'month') {
+      return `${timePrefix} ${typeLabel}｜${event.groupLeaderName}`
+    }
+    return `${timePrefix}${typeTag}${event.groupLeaderName}`
   }
 
   const timePrefix = event.startTime ?? ''
