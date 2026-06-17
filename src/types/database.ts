@@ -227,6 +227,89 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_change_records: {
+        Row: {
+          id: string
+          facility_id: string
+          target_date: string
+          reason: string
+          handled_by: string
+          memo: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          facility_id: string
+          target_date: string
+          reason: string
+          handled_by: string
+          memo?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          facility_id?: string
+          target_date?: string
+          reason?: string
+          handled_by?: string
+          memo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'shift_change_records_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      shift_change_details: {
+        Row: {
+          id: string
+          record_id: string
+          employee_name: string
+          change_type: string
+          change_detail: string
+          is_external_support: boolean
+          support_from_facility_id: string | null
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          record_id: string
+          employee_name: string
+          change_type: string
+          change_detail: string
+          is_external_support?: boolean
+          support_from_facility_id?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          record_id?: string
+          employee_name?: string
+          change_type?: string
+          change_detail?: string
+          is_external_support?: boolean
+          support_from_facility_id?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'shift_change_details_record_id_fkey'
+            columns: ['record_id']
+            isOneToOne: false
+            referencedRelation: 'shift_change_records'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       shift_files: {
         Row: {
           id: string

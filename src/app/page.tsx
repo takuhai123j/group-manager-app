@@ -24,13 +24,15 @@ import { AnnouncementAdmin } from '@/components/announcements/AnnouncementAdmin'
 import { ShiftFileManager } from '@/components/shifts/ShiftFileManager'
 import { StaffMemberModal } from '@/components/staff/StaffMemberModal'
 import { useStaffMembers } from '@/hooks/useStaffMembers'
+import { ShiftChangeManager } from '@/components/shiftChanges/ShiftChangeManager'
+import { useShiftChanges } from '@/hooks/useShiftChanges'
 import {
   hasLocalStorageData,
   migrateToSupabase,
   dismissMigration,
   type MigrationResult,
 } from '@/services/migrationService'
-import type { ColorMode, EventFilters, ScheduleEvent, CreateEventInput } from '@/lib/types'
+import type { ColorMode, EventFilters, ScheduleEvent, CreateEventInput, CreateShiftChangeInput } from '@/lib/types'
 
 // ブラウザConsoleにエラー詳細を出力するヘルパー
 function logError(context: string, error: unknown) {
@@ -146,6 +148,15 @@ export default function HomePage() {
   } = useShiftFiles()
 
   const {
+    records: shiftChangeRecords,
+    loading: shiftChangesLoading,
+    reload: reloadShiftChanges,
+    addRecord: addShiftChange,
+    updateRecord: updateShiftChange,
+    deleteRecord: deleteShiftChange,
+  } = useShiftChanges()
+
+  const {
     members: leaderMembers,
     activeMembers: activeLeaders,
     addMember: addLeader,
@@ -225,6 +236,7 @@ export default function HomePage() {
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
   const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
   const [shiftManagerOpen, setShiftManagerOpen] = useState(false)
+  const [shiftChangeManagerOpen, setShiftChangeManagerOpen] = useState(false)
   const [leaderManagerOpen, setLeaderManagerOpen] = useState(false)
   const [rounderManagerOpen, setRounderManagerOpen] = useState(false)
   const [fieldEmployeeManagerOpen, setFieldEmployeeManagerOpen] = useState(false)
@@ -398,6 +410,7 @@ export default function HomePage() {
         onOpenGroupManager={openGroupManager}
         onOpenFacilityManager={openFacilityManager}
         onOpenShiftManager={() => setShiftManagerOpen(true)}
+        onOpenShiftChangeManager={() => setShiftChangeManagerOpen(true)}
         onOpenLeaderManager={() => setLeaderManagerOpen(true)}
         onOpenRounderManager={() => setRounderManagerOpen(true)}
         onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
@@ -485,6 +498,19 @@ export default function HomePage() {
         onAdd={addAnnouncement}
         onUpdate={updateAnnouncement}
         onDelete={deleteAnnouncement}
+      />
+
+      {/* シフト変更記録 */}
+      <ShiftChangeManager
+        isOpen={shiftChangeManagerOpen}
+        records={shiftChangeRecords}
+        loading={shiftChangesLoading}
+        facilities={allFacilities}
+        onClose={() => setShiftChangeManagerOpen(false)}
+        onAdd={addShiftChange}
+        onUpdate={updateShiftChange}
+        onDelete={deleteShiftChange}
+        onReload={reloadShiftChanges}
       />
 
       {/* シフト表管理 */}

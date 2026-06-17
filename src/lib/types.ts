@@ -145,3 +145,62 @@ export type StaffMemberInput = {
   color: string
   memo: string
 }
+
+export const SHIFT_CHANGE_TYPES = [
+  '欠勤', '遅刻', '早退', '時間変更', '交代出勤', 'その他',
+] as const
+
+export type ShiftChangeType = typeof SHIFT_CHANGE_TYPES[number]
+
+export interface ShiftChangeDetail {
+  id: string
+  recordId: string
+  employeeName: string
+  changeType: ShiftChangeType | string  // 旧データ互換のため string も許容
+  changeDetail: string
+  isExternalSupport: boolean
+  supportFromFacilityId: string | null
+  sortOrder: number
+  createdAt: string
+}
+
+export interface ShiftChangeRecord {
+  id: string
+  facilityId: string
+  facilityName: string
+  targetDate: string   // YYYY-MM-DD
+  reason: string
+  handledBy: string
+  memo: string
+  details: ShiftChangeDetail[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateShiftChangeDetailInput = {
+  employeeName: string
+  changeType: ShiftChangeType
+  changeDetail: string
+  isExternalSupport: boolean
+  supportFromFacilityId: string | null
+}
+
+export type CreateShiftChangeInput = {
+  facilityId: string
+  targetDate: string
+  reason: string
+  handledBy: string
+  memo: string
+  details: CreateShiftChangeDetailInput[]
+}
+
+export interface ShiftChangeFilters {
+  facilityId: string
+  targetDate: string
+  reason: string
+  handledBy: string
+  employeeName: string
+  changeType: string
+  isExternalSupport: string   // 'true' | ''
+  supportFacilityId: string
+}

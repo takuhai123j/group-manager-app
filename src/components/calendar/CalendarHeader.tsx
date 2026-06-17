@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown, ArrowLeftRight } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
 
@@ -19,6 +19,7 @@ interface CalendarHeaderProps {
   onOpenLeaderManager: () => void
   onOpenRounderManager: () => void
   onOpenFieldEmployeeManager: () => void
+  onOpenShiftChangeManager: () => void
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = { month: '月', week: '週', day: '日' }
@@ -34,6 +35,7 @@ export function CalendarHeader({
   onPrev, onNext, onToday, onChangeView, onAddEvent,
   onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
   onOpenLeaderManager, onOpenRounderManager, onOpenFieldEmployeeManager,
+  onOpenShiftChangeManager,
 }: CalendarHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -80,6 +82,16 @@ export function CalendarHeader({
 
       {/* Right: PDF + 管理ドロップダウン + view switcher + add */}
       <div className="flex items-center gap-1.5">
+        {/* シフト変更記録 */}
+        <button
+          onClick={onOpenShiftChangeManager}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
+          title="シフト変更記録"
+        >
+          <ArrowLeftRight size={15} />
+          <span className="hidden sm:inline">シフト変更</span>
+        </button>
+
         {/* PDF資料 */}
         <button
           onClick={onOpenShiftManager}
