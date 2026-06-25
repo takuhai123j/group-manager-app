@@ -442,15 +442,17 @@ export default function HomePage() {
           onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
         />
 
-        {/* Filter bar */}
-        <FilterBar
-          filters={filters}
-          facilityNames={facilityNames}
-          totalCount={leaderBaseCount}
-          filteredCount={filteredEvents.length}
-          onChange={setFilters}
-          onClear={() => setFilters(EMPTY_FILTERS)}
-        />
+        {/* Filter bar - PC only */}
+        <div className="hidden sm:block">
+          <FilterBar
+            filters={filters}
+            facilityNames={facilityNames}
+            totalCount={leaderBaseCount}
+            filteredCount={filteredEvents.length}
+            onChange={setFilters}
+            onClear={() => setFilters(EMPTY_FILTERS)}
+          />
+        </div>
       </div>
 
       {/* Calendar body */}
