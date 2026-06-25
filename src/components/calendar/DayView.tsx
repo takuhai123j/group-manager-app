@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   cn, formatJa, toDateString, generateTimeSlots, getEventPosition,
   isTodayDate, isSaturday, isSunday, getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
@@ -19,7 +19,6 @@ interface DayViewProps {
   colorMode: ColorMode
   onSlotClick: (date: Date, time: string) => void
   onEventClick: (event: ScheduleEvent) => void
-  onScrollY?: (y: number) => void
 }
 
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
@@ -30,7 +29,7 @@ function getNowTop(): number {
   return (now.getHours() * 60 + now.getMinutes() - GRID_START_HOUR * 60) / 30 * SLOT_HEIGHT
 }
 
-export function DayView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick, onScrollY }: DayViewProps) {
+export function DayView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick }: DayViewProps) {
   const allEvents = events.filter(e => e.date === toDateString(currentDate))
   const allDayEvents = allEvents.filter(e => e.isAllDay)
   const positionedEvents = computeEventColumns(allEvents.filter(e => !e.isAllDay))
@@ -48,10 +47,6 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
     return () => clearInterval(id)
   }, [])
   const showNowLine = isToday && nowTop >= 0 && nowTop <= NOW_TOP_MAX
-
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    onScrollY?.((e.target as HTMLDivElement).scrollTop)
-  }, [onScrollY])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -108,7 +103,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
       )}
 
       {/* Time grid */}
-      <div className="flex-1 overflow-y-auto min-h-0" onScroll={handleScroll}>
+      <div className="flex-1 overflow-y-auto min-h-0">
         <div className="flex">
           {/* Time labels */}
           <div className="w-16 flex-shrink-0">
