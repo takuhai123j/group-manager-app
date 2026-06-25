@@ -346,7 +346,7 @@ export default function HomePage() {
   ) : null
 
   return (
-    <div className="flex flex-col min-h-screen md:h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-50">
       {/* App bar */}
       <div className="bg-blue-700 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
         <div>
@@ -427,7 +427,7 @@ export default function HomePage() {
       />
 
       {/* Calendar body */}
-      <main className="flex-1 bg-white md:overflow-y-auto md:min-h-0">
+      <main className="flex-1 bg-white overflow-y-auto min-h-0">
         {view === 'month' && (
           <MonthView
             currentDate={currentDate}

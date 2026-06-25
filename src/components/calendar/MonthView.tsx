@@ -3,7 +3,7 @@
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth,
 } from 'date-fns'
-import { cn, toDateString, isTodayDate, isSaturday, isSunday } from '@/lib/utils'
+import { cn, toDateString, isTodayDate, isSaturday, isSunday, WEEK_STARTS_ON } from '@/lib/utils'
 import { getJapaneseHolidays } from '@/lib/holidays'
 import { EventBadge } from '@/components/events/EventBadge'
 import type { ColorMode, GroupManager, ScheduleEvent } from '@/lib/types'
@@ -18,12 +18,12 @@ interface MonthViewProps {
   onEventClick: (event: ScheduleEvent) => void
 }
 
-const DAY_HEADERS = ['月', '火', '水', '木', '金', '土', '日']
+const DAY_HEADERS = ['日', '月', '火', '水', '木', '金', '土']
 
 export function MonthView({ currentDate, events, managers, managerFacilities, colorMode, onDayClick, onEventClick }: MonthViewProps) {
   const days = eachDayOfInterval({
-    start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }),
-    end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 }),
+    start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: WEEK_STARTS_ON }),
+    end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: WEEK_STARTS_ON }),
   })
 
   const holidayMap = getJapaneseHolidays(days[0], days[days.length - 1])
@@ -40,11 +40,11 @@ export function MonthView({ currentDate, events, managers, managerFacilities, co
 
   return (
     <div className="flex flex-col md:h-full">
-      <div className="grid grid-cols-7 border-b bg-gray-50">
+      <div className="sticky top-0 z-10 grid grid-cols-7 border-b bg-gray-50">
         {DAY_HEADERS.map((day, i) => (
           <div key={day} className={cn(
             'py-2 text-center text-xs font-semibold',
-            i === 5 ? 'text-blue-600' : i === 6 ? 'text-red-600' : 'text-gray-500'
+            i === 0 ? 'text-red-600' : i === 6 ? 'text-blue-600' : 'text-gray-500'
           )}>{day}</div>
         ))}
       </div>
@@ -68,8 +68,8 @@ export function MonthView({ currentDate, events, managers, managerFacilities, co
               key={toDateString(day)}
               onClick={() => onDayClick(day)}
               className={cn(
-                'border-r border-b min-h-[80px] sm:min-h-[100px] p-1 cursor-pointer hover:bg-blue-50/30 transition-colors',
-                !isCurrent && 'bg-gray-50'
+                'border-r border-b min-h-[80px] sm:min-h-[100px] p-1 cursor-pointer hover:bg-blue-100/40 transition-colors',
+                isToday ? 'bg-blue-50' : !isCurrent ? 'bg-gray-50' : 'bg-white'
               )}
             >
               <div className="flex items-center justify-between mb-0.5">

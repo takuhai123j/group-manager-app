@@ -36,10 +36,10 @@ export function isSameMonthDate(date: Date, baseDate: Date): boolean {
   return isSameMonth(date, baseDate)
 }
 
-// Get week days starting from Monday (Japanese business week)
+// Get week days starting from WEEK_STARTS_ON (default: Sunday)
 export function getWeekDays(date: Date): Date[] {
-  const start = startOfWeek(date, { weekStartsOn: 1 })
-  const end = endOfWeek(date, { weekStartsOn: 1 })
+  const start = startOfWeek(date, { weekStartsOn: WEEK_STARTS_ON })
+  const end = endOfWeek(date, { weekStartsOn: WEEK_STARTS_ON })
   return eachDayOfInterval({ start, end })
 }
 
@@ -82,14 +82,15 @@ export function getEventPosition(startTime: string | null | undefined, endTime: 
   return { top, height }
 }
 
-export const DAY_NAMES_JA = ['月', '火', '水', '木', '金', '土', '日']
-export const DAY_NAMES_FULL_JA = ['月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日', '日曜日']
+// 0=Sunday（日曜始まり）, 1=Monday（月曜始まり）
+export const WEEK_STARTS_ON = 0 as 0 | 1
+
+export const DAY_NAMES_JA = ['日', '月', '火', '水', '木', '金', '土']
+export const DAY_NAMES_FULL_JA = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日']
 
 export function getDayName(date: Date): string {
-  // getDay() returns 0=Sun,1=Mon,...,6=Sat
-  // We want Mon=0,...,Sat=5,Sun=6
-  const day = (date.getDay() + 6) % 7
-  return DAY_NAMES_JA[day]
+  // getDay() returns 0=Sun,...,6=Sat → matches DAY_NAMES_JA index directly
+  return DAY_NAMES_JA[date.getDay()]
 }
 
 export function isWeekend(date: Date): boolean {

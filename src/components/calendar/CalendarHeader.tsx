@@ -24,6 +24,12 @@ interface CalendarHeaderProps {
 
 const VIEW_LABELS: Record<CalendarView, string> = { month: '月', week: '週', day: '日' }
 
+const NAV_LABELS: Record<CalendarView, { prev: string; next: string }> = {
+  month: { prev: '前月', next: '次月' },
+  week:  { prev: '前週', next: '次週' },
+  day:   { prev: '昨日', next: '明日' },
+}
+
 function getTitle(date: Date, view: CalendarView): string {
   if (view === 'month') return formatJa(date, 'yyyy年 M月')
   if (view === 'week') return formatJa(date, 'yyyy年 M月')
@@ -69,11 +75,21 @@ export function CalendarHeader({
           className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 whitespace-nowrap">
           今日
         </button>
-        <button onClick={onPrev} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600" aria-label="前へ">
-          <ChevronLeft size={20} />
+        <button
+          onClick={onPrev}
+          className="flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 text-gray-600"
+          aria-label={NAV_LABELS[view].prev}
+        >
+          <ChevronLeft size={18} />
+          <span className="hidden sm:inline text-sm font-medium">{NAV_LABELS[view].prev}</span>
         </button>
-        <button onClick={onNext} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600" aria-label="次へ">
-          <ChevronRight size={20} />
+        <button
+          onClick={onNext}
+          className="flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 text-gray-600"
+          aria-label={NAV_LABELS[view].next}
+        >
+          <span className="hidden sm:inline text-sm font-medium">{NAV_LABELS[view].next}</span>
+          <ChevronRight size={18} />
         </button>
         <h1 className="text-lg font-semibold text-gray-800 ml-1 whitespace-nowrap">
           {getTitle(currentDate, view)}
