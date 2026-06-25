@@ -36,6 +36,11 @@ function getTitle(date: Date, view: CalendarView): string {
   return formatJa(date, 'yyyy年 M月d日（EEE）')
 }
 
+function getMobileTitle(date: Date, view: CalendarView): string {
+  if (view === 'day') return formatJa(date, 'M月d日（EEE）')
+  return formatJa(date, 'M月')
+}
+
 export function CalendarHeader({
   currentDate, view,
   onPrev, onNext, onToday, onChangeView, onAddEvent,
@@ -85,7 +90,8 @@ export function CalendarHeader({
           <span className="hidden sm:inline text-sm font-medium">{NAV_LABELS[view].prev}</span>
         </button>
         <h1 className="text-sm sm:text-lg font-semibold text-gray-800 flex-1 truncate text-center sm:text-left sm:flex-none sm:whitespace-nowrap">
-          {getTitle(currentDate, view)}
+          <span className="sm:hidden">{getMobileTitle(currentDate, view)}</span>
+          <span className="hidden sm:inline">{getTitle(currentDate, view)}</span>
         </h1>
         <button
           onClick={onNext}
