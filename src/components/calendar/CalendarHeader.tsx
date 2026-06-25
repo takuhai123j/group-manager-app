@@ -100,24 +100,24 @@ export function CalendarHeader({
 
       {/* Right: management buttons (hidden on mobile) + view switcher + add */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        {/* シフト変更記録 - PC only */}
+        {/* シフト変更記録 */}
         <button
           onClick={onOpenShiftChangeManager}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
           title="シフト変更記録"
         >
           <ArrowLeftRight size={15} />
-          <span>シフト変更</span>
+          <span className="hidden sm:inline">シフト変更</span>
         </button>
 
-        {/* PDF資料 - PC only */}
+        {/* PDF資料 */}
         <button
           onClick={onOpenShiftManager}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
           title="PDF資料"
         >
           <FileText size={15} />
-          <span>PDF資料</span>
+          <span className="hidden sm:inline">PDF資料</span>
         </button>
 
         {/* 管理ドロップダウン - PC only */}
