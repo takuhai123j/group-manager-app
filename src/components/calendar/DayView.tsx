@@ -33,6 +33,10 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
   const allEvents = events.filter(e => e.date === toDateString(currentDate))
   const allDayEvents = allEvents.filter(e => e.isAllDay)
   const positionedEvents = computeEventColumns(allEvents.filter(e => !e.isAllDay))
+  // モバイルリスト表示用（時刻順ソート済み）
+  const timedEventsSorted = allEvents
+    .filter(e => !e.isAllDay)
+    .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
 
   const isToday = isTodayDate(currentDate)
   const isSat = isSaturday(currentDate)
@@ -72,9 +76,96 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
         </div>
       </div>
 
-      {/* All-day events section */}
+      {/* ===== スマホ専用: リスト表示 ===== */}
+      <div className="sm:hidden flex-1 overflow-y-auto min-h-0 bg-white">
+        {/* 全日予定 */}
+        {allDayEvents.length > 0 && (
+          <div className="px-4 pt-3 pb-3 border-b border-gray-100 bg-gray-50">
+            <p className="text-xs text-gray-400 font-medium mb-2">終日</p>
+            <div className="space-y-2">
+              {allDayEvents.map(event => {
+                const typeConfig = getEventTypeConfig(event.type)
+                const manager = managers.find(m => m.id === event.groupLeaderId)
+                const barColor = manager?.color ?? '#6B7280'
+                return (
+                  <button
+                    key={event.id}
+                    onClick={e => { e.stopPropagation(); onEventClick(event) }}
+                    className="w-full text-left flex items-center gap-3 py-1.5 hover:opacity-75 active:opacity-60 transition-opacity"
+                  >
+                    <div className="w-1.5 self-stretch rounded-full flex-shrink-0 min-h-[20px]" style={{ backgroundColor: barColor }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        <span className={cn('font-bold', typeConfig.textColor)}>{typeConfig.label}</span>
+                        {event.groupLeaderName && <span className="text-gray-600">｜{event.groupLeaderName}</span>}
+                      </p>
+                      {event.title && (
+                        <p className="text-xs text-gray-500 truncate mt-0.5">{event.title}</p>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 時間指定予定 */}
+        {timedEventsSorted.length > 0 ? (
+          <div className="divide-y divide-gray-100">
+            {timedEventsSorted.map(event => {
+              const typeConfig = getEventTypeConfig(event.type)
+              const manager = managers.find(m => m.id === event.groupLeaderId)
+              const barColor = manager?.color ?? '#6B7280'
+              const defaultIds = managerFacilities[event.groupLeaderId] ?? []
+              const isOutside = !!event.facilityId && defaultIds.length > 0 && !defaultIds.includes(event.facilityId)
+              return (
+                <button
+                  key={event.id}
+                  onClick={e => { e.stopPropagation(); onEventClick(event) }}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-1.5 self-stretch rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: barColor }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-400 leading-tight">
+                        {event.startTime}〜{event.endTime}
+                        <span className={cn('ml-2 font-semibold', typeConfig.textColor)}>{typeConfig.label}</span>
+                      </p>
+                      <p className="text-sm font-medium text-gray-800 mt-1 leading-tight flex items-center gap-1 flex-wrap">
+                        <span className="truncate">
+                          {isHalfDayType(event.type)
+                            ? event.groupLeaderName
+                            : event.facilityName || '施設未設定'
+                          }
+                        </span>
+                        {isOutside && !isHalfDayType(event.type) && (
+                          <span className="text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold flex-shrink-0">担当外</span>
+                        )}
+                      </p>
+                      {event.title && (
+                        <p className="text-sm text-gray-500 truncate mt-0.5">{event.title}</p>
+                      )}
+                      {!isHalfDayType(event.type) && event.groupLeaderName && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: barColor }} />
+                          <p className="text-xs text-gray-400">{event.groupLeaderName}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : allDayEvents.length === 0 ? (
+          <div className="text-center py-12 text-gray-400 text-sm">予定はありません</div>
+        ) : null}
+      </div>
+
+      {/* ===== PC専用: 全日予定セクション ===== */}
       {allDayEvents.length > 0 && (
-        <div className="flex-shrink-0 border-b bg-white px-4 py-2 space-y-1.5">
+        <div className="hidden sm:block flex-shrink-0 border-b bg-white px-4 py-2 space-y-1.5">
           <p className="text-xs text-gray-400 font-medium mb-1">終日</p>
           {allDayEvents.map(event => {
             const typeConfig = getEventTypeConfig(event.type)
@@ -102,8 +193,8 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
         </div>
       )}
 
-      {/* Time grid */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      {/* ===== PC専用: タイムグリッド ===== */}
+      <div className="hidden sm:block flex-1 overflow-y-auto min-h-0">
         <div className="flex">
           {/* Time labels */}
           <div className="w-16 flex-shrink-0">
@@ -116,7 +207,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
             ))}
           </div>
 
-          {/* Main column: 今日はハイライト */}
+          {/* Main column */}
           <div className={cn('flex-1 relative border-l', isToday && 'bg-blue-50')}>
             {TIME_LABELS.map(slot => (
               <div
@@ -139,11 +230,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
               const colL = event.columnIndex * colW
 
               const cardStyle = colorMode === 'leader'
-                ? {
-                    ...getManagerColorStyle(manager?.color ?? '#6B7280'),
-                    borderWidth: 1,
-                    borderStyle: 'solid' as const,
-                  }
+                ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
                 : undefined
               const cardClass = colorMode === 'type'
                 ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor)
@@ -169,40 +256,27 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                     cardClass
                   )}
                 >
-                  {/* Type - 種別を常に最上部に表示 */}
-                  <p className="text-sm font-bold truncate leading-tight">
-                    【{typeConfig.label}】
-                  </p>
-                  {/* Time */}
+                  <p className="text-sm font-bold truncate leading-tight">【{typeConfig.label}】</p>
                   <p className="text-xs opacity-80 mt-0.5">{event.startTime}〜{event.endTime}</p>
-                  {/* Facility + outside indicator */}
                   {height >= 44 && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <p className="text-xs opacity-70 truncate">
                         {isHalfDayType(event.type) ? `👤 ${event.groupLeaderName}` : `📍 ${event.facilityName || '施設未設定'}`}
                       </p>
                       {isOutside && !isHalfDayType(event.type) && (
-                        <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">
-                          担当外
-                        </span>
+                        <span className="shrink-0 text-[10px] px-1 py-px rounded bg-amber-200 text-amber-800 border border-amber-300 font-bold leading-none">担当外</span>
                       )}
                     </div>
                   )}
-                  {/* Title */}
                   {height >= 60 && (
                     <p className="text-xs font-medium truncate mt-0.5">{event.title}</p>
                   )}
-                  {/* Group leader */}
                   {height >= 76 && (
                     <div className="flex items-center gap-1 mt-0.5">
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: manager?.color ?? '#6B7280' }}
-                      />
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: manager?.color ?? '#6B7280' }} />
                       <p className="text-xs opacity-70 truncate">{event.groupLeaderName}</p>
                     </div>
                   )}
-                  {/* Memo */}
                   {height >= 100 && event.memo && (
                     <p className="text-xs opacity-55 mt-0.5 truncate">📝 {event.memo}</p>
                   )}
@@ -210,25 +284,20 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
               )
             })}
 
-            {/* 現在時刻ライン（今日のみ） */}
+            {/* 現在時刻ライン */}
             {showNowLine && (
               <>
-                <div
-                  className="absolute left-0 right-0 h-px bg-red-500 z-20 pointer-events-none"
-                  style={{ top: nowTop }}
-                />
-                <div
-                  className="absolute w-2.5 h-2.5 rounded-full bg-red-500 z-20 pointer-events-none"
-                  style={{ top: nowTop - 5, left: -5 }}
-                />
+                <div className="absolute left-0 right-0 h-px bg-red-500 z-20 pointer-events-none" style={{ top: nowTop }} />
+                <div className="absolute w-2.5 h-2.5 rounded-full bg-red-500 z-20 pointer-events-none" style={{ top: nowTop - 5, left: -5 }} />
               </>
             )}
           </div>
         </div>
       </div>
 
+      {/* PC専用: 予定なし */}
       {allEvents.length === 0 && (
-        <div className="flex-shrink-0 text-center py-6 text-gray-400 text-sm">
+        <div className="hidden sm:block flex-shrink-0 text-center py-6 text-gray-400 text-sm">
           この日の予定はありません
         </div>
       )}
