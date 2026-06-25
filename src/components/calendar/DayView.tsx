@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   cn, formatJa, toDateString, generateTimeSlots, getEventPosition,
   isTodayDate, isSaturday, isSunday, getManagerColorStyle, SLOT_HEIGHT, GRID_START_HOUR,
@@ -19,6 +19,7 @@ interface DayViewProps {
   colorMode: ColorMode
   onSlotClick: (date: Date, time: string) => void
   onEventClick: (event: ScheduleEvent) => void
+  onScrollY?: (y: number) => void
 }
 
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
@@ -29,7 +30,7 @@ function getNowTop(): number {
   return (now.getHours() * 60 + now.getMinutes() - GRID_START_HOUR * 60) / 30 * SLOT_HEIGHT
 }
 
-export function DayView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick }: DayViewProps) {
+export function DayView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick, onScrollY }: DayViewProps) {
   const allEvents = events.filter(e => e.date === toDateString(currentDate))
   const allDayEvents = allEvents.filter(e => e.isAllDay)
   const positionedEvents = computeEventColumns(allEvents.filter(e => !e.isAllDay))
@@ -48,27 +49,31 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
   }, [])
   const showNowLine = isToday && nowTop >= 0 && nowTop <= NOW_TOP_MAX
 
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    onScrollY?.((e.target as HTMLDivElement).scrollTop)
+  }, [onScrollY])
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Day header */}
-      <div className="flex-shrink-0 border-b bg-gray-50 px-4 py-3">
-        <div className="flex items-center gap-3">
+      {/* Day header - compact on mobile */}
+      <div className="flex-shrink-0 border-b bg-gray-50 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className={cn(
-            'w-12 h-12 flex items-center justify-center rounded-full text-xl font-bold flex-shrink-0',
+            'w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center rounded-full text-base sm:text-xl font-bold flex-shrink-0',
             isToday ? 'bg-blue-600 text-white'
               : isRedDay ? 'bg-red-50 border-2 border-red-200 text-red-600'
               : isSat ? 'bg-blue-50 border-2 border-blue-200 text-blue-600'
               : 'bg-white border-2 border-gray-200 text-gray-800'
           )}>{currentDate.getDate()}</div>
-          <div>
-            <p className="text-lg font-semibold text-gray-800">{formatJa(currentDate, 'yyyy年M月d日')}</p>
-            <p className="text-sm text-gray-500">
+          <div className="min-w-0">
+            <p className="text-sm sm:text-lg font-semibold text-gray-800 truncate">{formatJa(currentDate, 'yyyy年M月d日')}</p>
+            <p className="text-xs sm:text-sm text-gray-500 flex items-center gap-1 flex-wrap">
               {formatJa(currentDate, 'EEEE')}
-              {isToday && <span className="ml-2 text-blue-600 font-medium">今日</span>}
-              {holidayName && <span className="ml-2 text-red-500 font-medium">{holidayName}</span>}
+              {isToday && <span className="text-blue-600 font-medium">今日</span>}
+              {holidayName && <span className="text-red-500 font-medium">{holidayName}</span>}
             </p>
           </div>
-          <div className="ml-auto text-sm text-gray-500">{allEvents.length}件の予定</div>
+          <div className="ml-auto text-xs sm:text-sm text-gray-500 whitespace-nowrap">{allEvents.length}件</div>
         </div>
       </div>
 
@@ -103,7 +108,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
       )}
 
       {/* Time grid */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0" onScroll={handleScroll}>
         <div className="flex">
           {/* Time labels */}
           <div className="w-16 flex-shrink-0">

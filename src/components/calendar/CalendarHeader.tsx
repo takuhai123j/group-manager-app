@@ -68,65 +68,67 @@ export function CalendarHeader({
   ]
 
   return (
-    <header className="bg-white border-b px-3 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      {/* Left: nav + title */}
-      <div className="flex items-center gap-1.5">
+    <header className="bg-white border-b px-2 py-1.5 sm:px-3 sm:py-2.5 flex items-center gap-1 sm:gap-2 sm:justify-between">
+      {/* Left: nav + title (flex-1 on mobile to center title between arrows) */}
+      <div className="flex items-center gap-1 flex-1 min-w-0">
         <button onClick={onToday}
-          className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 whitespace-nowrap">
+          className="px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 whitespace-nowrap flex-shrink-0">
           今日
         </button>
         <button
           onClick={onPrev}
-          className="flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 text-gray-600"
+          className="flex items-center gap-0.5 p-1.5 sm:px-2 sm:py-1.5 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
           aria-label={NAV_LABELS[view].prev}
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={16} className="sm:hidden" />
+          <ChevronLeft size={18} className="hidden sm:block" />
           <span className="hidden sm:inline text-sm font-medium">{NAV_LABELS[view].prev}</span>
         </button>
+        <h1 className="text-sm sm:text-lg font-semibold text-gray-800 flex-1 truncate text-center sm:text-left sm:flex-none sm:whitespace-nowrap">
+          {getTitle(currentDate, view)}
+        </h1>
         <button
           onClick={onNext}
-          className="flex items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 text-gray-600"
+          className="flex items-center gap-0.5 p-1.5 sm:px-2 sm:py-1.5 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
           aria-label={NAV_LABELS[view].next}
         >
           <span className="hidden sm:inline text-sm font-medium">{NAV_LABELS[view].next}</span>
-          <ChevronRight size={18} />
+          <ChevronRight size={16} className="sm:hidden" />
+          <ChevronRight size={18} className="hidden sm:block" />
         </button>
-        <h1 className="text-lg font-semibold text-gray-800 ml-1 whitespace-nowrap">
-          {getTitle(currentDate, view)}
-        </h1>
       </div>
 
-      {/* Right: PDF + 管理ドロップダウン + view switcher + add */}
-      <div className="flex items-center gap-1.5">
-        {/* シフト変更記録 */}
+      {/* Right: management buttons (hidden on mobile) + view switcher + add */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {/* シフト変更記録 - PC only */}
         <button
           onClick={onOpenShiftChangeManager}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
           title="シフト変更記録"
         >
           <ArrowLeftRight size={15} />
-          <span className="hidden sm:inline">シフト変更</span>
+          <span>シフト変更</span>
         </button>
 
-        {/* PDF資料 */}
+        {/* PDF資料 - PC only */}
         <button
           onClick={onOpenShiftManager}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
           title="PDF資料"
         >
           <FileText size={15} />
-          <span className="hidden sm:inline">PDF資料</span>
+          <span>PDF資料</span>
         </button>
 
-        {/* 管理ドロップダウン */}
-        <div className="relative" ref={menuRef}>
+        {/* 管理ドロップダウン - PC only */}
+        <div className="hidden sm:block relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(prev => !prev)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition-colors"
             title="マスタ管理"
           >
             <Users size={15} />
-            <span className="hidden sm:inline">管理</span>
+            <span>管理</span>
             <ChevronDown
               size={14}
               className={cn('transition-transform duration-150', menuOpen && 'rotate-180')}
@@ -160,7 +162,7 @@ export function CalendarHeader({
               key={v}
               onClick={() => onChangeView(v)}
               className={cn(
-                'px-4 py-1.5 text-sm font-medium transition-colors',
+                'px-2.5 py-1 sm:px-4 sm:py-1.5 text-xs sm:text-sm font-medium transition-colors',
                 view === v ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
               )}
             >
@@ -172,11 +174,10 @@ export function CalendarHeader({
         {/* Add event */}
         <button
           onClick={onAddEvent}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
         >
-          <Plus size={16} />
+          <Plus size={15} />
           <span className="hidden sm:inline">予定を追加</span>
-          <span className="sm:hidden">追加</span>
         </button>
       </div>
     </header>

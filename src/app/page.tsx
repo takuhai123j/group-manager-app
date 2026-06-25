@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react'
-import { formatJa } from '@/lib/utils'
+import { formatJa, cn } from '@/lib/utils'
 import { useEvents } from '@/hooks/useEvents'
 import { useCalendar } from '@/hooks/useCalendar'
 import { useFacilities } from '@/hooks/useFacilities'
@@ -201,6 +201,28 @@ export default function HomePage() {
     if (!loading) setShowMigration(hasLocalStorageData())
   }, [loading])
 
+  // ── モバイル: スクロール時にヘッダーを自動非表示 ──────────────
+  const [headerHidden, setHeaderHidden] = useState(false)
+  const scrollYRef = useRef(0)
+
+  const handleCalendarScroll = useCallback((y: number) => {
+    const prev = scrollYRef.current
+    scrollYRef.current = y
+    const delta = y - prev
+    if (y <= 30) {
+      setHeaderHidden(false)
+    } else if (delta > 3 && y > 100) {
+      setHeaderHidden(true)
+    } else if (delta < -8) {
+      setHeaderHidden(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    setHeaderHidden(false)
+    scrollYRef.current = 0
+  }, [view, currentDate])
+
   const handleMigrate = async (): Promise<MigrationResult> => {
     const result = await migrateToSupabase()
     await reloadEvents()
@@ -347,26 +369,8 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* App bar */}
-      <div className="bg-blue-700 text-white px-4 py-2 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h1 className="text-base font-bold leading-tight">イートハピネス総合スケジュール管理アプリ</h1>
-          <p className="text-xs text-blue-200 leading-tight">
-            {formatJa(new Date(), 'yyyy年M月d日（EEE）')}
-          </p>
-        </div>
-        <div className="text-xs text-blue-200 text-right">
-          <p>全{events.length}件</p>
-          {(selectedRole !== 'all' || selectedPersonId !== ALL_PERSON_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
-            <p className="text-blue-300">表示{filteredEvents.length}件</p>
-          )}
-        </div>
-      </div>
-
-      {/* エラーバナー（データ取得失敗時も空カレンダーを表示） */}
+      {/* エラー・移行バナーは常に表示 */}
       {ErrorBanner}
-
-      {/* localStorage 移行バナー */}
       {showMigration && !migrationDone && (
         <MigrationBanner
           onMigrate={handleMigrate}
@@ -380,54 +384,80 @@ export default function HomePage() {
         />
       )}
 
-      {/* お知らせバナー */}
-      <AnnouncementBanner
-        announcements={announcements}
-        onOpenAdmin={() => setAnnouncementAdminOpen(true)}
-      />
+      {/* モバイルでスクロール時に折りたたむヘッダー群 */}
+      <div className={cn(
+        'flex-shrink-0 overflow-hidden transition-[max-height] duration-300 ease-in-out',
+        'sm:overflow-visible sm:max-h-[600px]',
+        headerHidden ? 'max-h-0' : 'max-h-[280px]',
+      )}>
+        {/* App bar */}
+        <div className="bg-blue-700 text-white px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between">
+          <div>
+            <h1 className="text-sm sm:text-base font-bold leading-tight">イートハピネス総合スケジュール管理アプリ</h1>
+            <p className="text-xs text-blue-200 leading-tight hidden sm:block">
+              {formatJa(new Date(), 'yyyy年M月d日（EEE）')}
+            </p>
+          </div>
+          <div className="text-xs text-blue-200 text-right">
+            <p>全{events.length}件</p>
+            {(selectedRole !== 'all' || selectedPersonId !== ALL_PERSON_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
+              <p className="text-blue-300">表示{filteredEvents.length}件</p>
+            )}
+          </div>
+        </div>
 
-      {/* 職種タブ + 個人タブ */}
-      <StaffTabs
-        selectedRole={selectedRole}
-        selectedPersonId={selectedPersonId}
-        activeManagers={activeManagers}
-        activeLeaders={activeLeaders}
-        activeRounders={activeRounders}
-        activeFieldEmployees={activeFieldEmployees}
-        onRoleChange={handleRoleChange}
-        onPersonChange={setSelectedPersonId}
-      />
+        {/* お知らせバナー */}
+        <AnnouncementBanner
+          announcements={announcements}
+          onOpenAdmin={() => setAnnouncementAdminOpen(true)}
+        />
 
-      {/* Calendar header */}
-      <CalendarHeader
-        currentDate={currentDate}
-        view={view}
-        onPrev={navigatePrev}
-        onNext={navigateNext}
-        onToday={goToToday}
-        onChangeView={changeView}
-        onAddEvent={() => openAdd()}
-        onOpenGroupManager={openGroupManager}
-        onOpenFacilityManager={openFacilityManager}
-        onOpenShiftManager={() => setShiftManagerOpen(true)}
-        onOpenShiftChangeManager={() => setShiftChangeManagerOpen(true)}
-        onOpenLeaderManager={() => setLeaderManagerOpen(true)}
-        onOpenRounderManager={() => setRounderManagerOpen(true)}
-        onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
-      />
+        {/* 職種タブ + 個人タブ */}
+        <StaffTabs
+          selectedRole={selectedRole}
+          selectedPersonId={selectedPersonId}
+          activeManagers={activeManagers}
+          activeLeaders={activeLeaders}
+          activeRounders={activeRounders}
+          activeFieldEmployees={activeFieldEmployees}
+          onRoleChange={handleRoleChange}
+          onPersonChange={setSelectedPersonId}
+        />
 
-      {/* Filter bar */}
-      <FilterBar
-        filters={filters}
-        facilityNames={facilityNames}
-        totalCount={leaderBaseCount}
-        filteredCount={filteredEvents.length}
-        onChange={setFilters}
-        onClear={() => setFilters(EMPTY_FILTERS)}
-      />
+        {/* Calendar header */}
+        <CalendarHeader
+          currentDate={currentDate}
+          view={view}
+          onPrev={navigatePrev}
+          onNext={navigateNext}
+          onToday={goToToday}
+          onChangeView={changeView}
+          onAddEvent={() => openAdd()}
+          onOpenGroupManager={openGroupManager}
+          onOpenFacilityManager={openFacilityManager}
+          onOpenShiftManager={() => setShiftManagerOpen(true)}
+          onOpenShiftChangeManager={() => setShiftChangeManagerOpen(true)}
+          onOpenLeaderManager={() => setLeaderManagerOpen(true)}
+          onOpenRounderManager={() => setRounderManagerOpen(true)}
+          onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
+        />
+
+        {/* Filter bar */}
+        <FilterBar
+          filters={filters}
+          facilityNames={facilityNames}
+          totalCount={leaderBaseCount}
+          filteredCount={filteredEvents.length}
+          onChange={setFilters}
+          onClear={() => setFilters(EMPTY_FILTERS)}
+        />
+      </div>
 
       {/* Calendar body */}
-      <main className="flex-1 bg-white overflow-y-auto min-h-0">
+      <main
+        className="flex-1 bg-white overflow-y-auto min-h-0"
+        onScroll={view === 'month' ? (e) => handleCalendarScroll((e.target as HTMLElement).scrollTop) : undefined}
+      >
         {view === 'month' && (
           <MonthView
             currentDate={currentDate}
@@ -448,6 +478,7 @@ export default function HomePage() {
             colorMode={colorMode}
             onSlotClick={handleSlotClick}
             onEventClick={openEdit}
+            onScrollY={handleCalendarScroll}
           />
         )}
         {view === 'day' && (
@@ -459,6 +490,7 @@ export default function HomePage() {
             colorMode={colorMode}
             onSlotClick={handleSlotClick}
             onEventClick={openEdit}
+            onScrollY={handleCalendarScroll}
           />
         )}
       </main>

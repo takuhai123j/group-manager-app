@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   cn, formatJa, toDateString, getWeekDays, generateTimeSlots,
   getEventPosition, isTodayDate, isSaturday, isSunday,
@@ -20,6 +20,7 @@ interface WeekViewProps {
   colorMode: ColorMode
   onSlotClick: (date: Date, time: string) => void
   onEventClick: (event: ScheduleEvent) => void
+  onScrollY?: (y: number) => void
 }
 
 const TIME_LABELS = generateTimeSlots(GRID_START_HOUR, 22)
@@ -30,7 +31,7 @@ function getNowTop(): number {
   return (now.getHours() * 60 + now.getMinutes() - GRID_START_HOUR * 60) / 30 * SLOT_HEIGHT
 }
 
-export function WeekView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick }: WeekViewProps) {
+export function WeekView({ currentDate, events, managers, managerFacilities, colorMode, onSlotClick, onEventClick, onScrollY }: WeekViewProps) {
   const weekDays = getWeekDays(currentDate)
   const holidayMap = getJapaneseHolidays(weekDays[0], weekDays[weekDays.length - 1])
 
@@ -51,9 +52,13 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
 
   const showNowLine = nowTop >= 0 && nowTop <= NOW_TOP_MAX
 
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    onScrollY?.((e.target as HTMLDivElement).scrollTop)
+  }, [onScrollY])
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto" onScroll={handleScroll}>
         <div className="flex flex-col min-w-[1036px]">
 
           {/* 曜日ヘッダー: sticky固定 */}
