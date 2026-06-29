@@ -59,7 +59,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SHIFT_CHANGE_NOTIFY_EMAILS が設定されていません' }, { status: 500 })
     }
 
-    const from = process.env.SHIFT_CHANGE_NOTIFY_FROM ?? 'onboarding@resend.dev'
+    const from = process.env.SHIFT_CHANGE_NOTIFY_FROM
+    if (!from) {
+      console.error('[shift-change-notify] SHIFT_CHANGE_NOTIFY_FROM が未設定です')
+      return NextResponse.json({ error: 'SHIFT_CHANGE_NOTIFY_FROM が設定されていません' }, { status: 500 })
+    }
     const date = formatDate(payload.targetDate)
     const subject = `【シフト変更】${payload.facilityName} ${date}`
     const text = buildText(payload)

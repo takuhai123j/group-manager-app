@@ -42,6 +42,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [emailWarning, setEmailWarning] = useState<string | null>(null)
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null)
 
   const activeFacilities = facilities.filter(f => f.active)
 
@@ -74,6 +75,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
       setDetails([{ ...EMPTY_DETAIL }])
     }
     setError(null)
+    setEmailSuccess(null)
   }, [isOpen, editing])
 
   if (!isOpen) return null
@@ -104,7 +106,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
         setError(`対象者${i + 1}の調整元施設を選択してください`); return
       }
     }
-    setSaving(true); setError(null); setEmailWarning(null)
+    setSaving(true); setError(null); setEmailWarning(null); setEmailSuccess(null)
     try {
       const saved = await onSave({
         facilityId: form.facilityId,
@@ -149,6 +151,8 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
             setEmailWarning('記録は保存しましたが、メール通知に失敗しました')
             return
           }
+          setEmailSuccess('記録を保存し、通知メールを送信しました')
+          return
         } catch {
           setEmailWarning('記録は保存しましたが、メール通知に失敗しました')
           return
@@ -217,7 +221,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">理由 <span className="text-red-500">*</span></label>
             <input type="text" value={form.reason} onChange={e => setField('reason', e.target.value)}
-              placeholder="例：体調不良、急なシフト変更"
+              placeholder="例：体調不良、電車遅延、子どもが発熱したため、親が倒れたため"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
@@ -249,7 +253,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                   <label className="block text-xs font-medium text-gray-700 mb-1">対象者 <span className="text-red-500">*</span></label>
                   <input type="text" value={d.employeeName}
                     onChange={e => updateDetail(i, { employeeName: e.target.value })}
-                    placeholder="例：山田 太郎"
+                    placeholder="例：山田パート"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
 
@@ -327,6 +331,9 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
           {emailWarning && (
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{emailWarning}</p>
           )}
+          {emailSuccess && (
+            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{emailSuccess}</p>
+          )}
         </div>
 
         {/* Footer */}
@@ -340,9 +347,9 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
           <div className="flex gap-2">
             <button onClick={onClose}
               className="px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
-              {emailWarning ? '閉じる' : 'キャンセル'}
+              {emailWarning || emailSuccess ? '閉じる' : 'キャンセル'}
             </button>
-            {!emailWarning && (
+            {!emailWarning && !emailSuccess && (
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
                 <Save size={14} />
