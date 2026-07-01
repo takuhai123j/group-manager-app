@@ -9,36 +9,102 @@ interface NotifyDetail {
   supportFromFacilityName?: string
 }
 
+interface DayNotifyDetail {
+  date: string
+  employeeName: string
+  changeType: string
+  originalShift?: string
+  replacementName?: string
+  replacementOriginalShift?: string
+  isExternalSupport: boolean
+  supportFromFacilityName?: string
+}
+
 interface NotifyPayload {
   facilityName: string
-  targetDate: string
+  // 単日
+  targetDate?: string
+  details?: NotifyDetail[]
+  // 期間
+  isPeriod?: boolean
+  startDate?: string
+  endDate?: string
+  count?: number
+  // 複数日選択
+  isMulti?: boolean
+  targetDates?: string[]
+  // 期間・複数日共通
+  dayDetails?: DayNotifyDetail[]
   reason: string
   handledBy: string
   memo: string
-  details: NotifyDetail[]
 }
 
 function formatDate(s: string): string {
+  const [, m, d] = s.split('-')
+  return `${parseInt(m)}/${parseInt(d)}`
+}
+
+function formatDateFull(s: string): string {
   const parts = s.split('-')
   return `${parts[0]}/${parts[1]}/${parts[2]}`
 }
 
+function formatDateJP(s: string): string {
+  if (!s) return ''
+  const [y, m, d] = s.split('-').map(Number)
+  const day = new Date(y, m - 1, d).getDay()
+  const weeks = ['日', '月', '火', '水', '木', '金', '土']
+  return `${m}/${d}（${weeks[day]}）`
+}
+
 function buildText(p: NotifyPayload): string {
-  const d = formatDate(p.targetDate)
   let t = `施設：${p.facilityName}\n`
-  t += `対象日：${d}\n`
+
+  if (p.isPeriod) {
+    t += `期間：${formatDateFull(p.startDate!)} ～ ${formatDateFull(p.endDate!)}\n`
+    t += `登録件数：${p.count}件\n`
+  } else if (p.isMulti) {
+    t += `対象日：${p.targetDates!.map(formatDateFull).join('、')}\n`
+    t += `登録件数：${p.count}件\n`
+  } else {
+    t += `対象日：${formatDateFull(p.targetDate!)}\n`
+  }
+
   t += `理由：${p.reason}\n`
   t += `対応者：${p.handledBy}\n`
   if (p.memo) t += `メモ：${p.memo}\n`
-  t += '\n【対象者】\n'
-  p.details.forEach((det, i) => {
-    t += `\n${i + 1}. ${det.employeeName}\n`
-    t += `   種別：${det.changeType}\n`
-    t += `   内容：${det.changeDetail}\n`
-    if (det.isExternalSupport) {
-      t += `   他施設応援：${det.supportFromFacilityName ?? 'あり'}\n`
-    }
-  })
+
+  // 単日：明細をそのまま表示
+  if (!p.isPeriod && !p.isMulti && p.details) {
+    t += '\n【対象者】\n'
+    p.details.forEach((det, i) => {
+      t += `\n${i + 1}. ${det.employeeName}\n`
+      t += `   種別：${det.changeType}\n`
+      t += `   内容：${det.changeDetail}\n`
+      if (det.isExternalSupport) {
+        t += `   他施設応援：${det.supportFromFacilityName ?? 'あり'}\n`
+      }
+    })
+    return t
+  }
+
+  // 期間・複数日：日別詳細
+  if (p.dayDetails && p.dayDetails.length > 0) {
+    t += '\n【日別詳細】\n'
+    p.dayDetails.forEach(day => {
+      t += `\n▶ ${formatDateJP(day.date)}\n`
+      t += `   種別：${day.changeType}\n`
+      t += `   対象者：${day.employeeName}\n`
+      if (day.originalShift) t += `   元シフト：${day.originalShift}\n`
+      if (day.replacementName) {
+        t += `   変更後担当：${day.replacementName}\n`
+        if (day.replacementOriginalShift) t += `   変更後担当の元シフト：${day.replacementOriginalShift}\n`
+      }
+      if (day.isExternalSupport) t += `   他施設応援：${day.supportFromFacilityName ?? 'あり'}\n`
+    })
+  }
+
   return t
 }
 
@@ -64,8 +130,13 @@ export async function POST(request: NextRequest) {
       console.error('[shift-change-notify] SHIFT_CHANGE_NOTIFY_FROM が未設定です')
       return NextResponse.json({ error: 'SHIFT_CHANGE_NOTIFY_FROM が設定されていません' }, { status: 500 })
     }
-    const date = formatDate(payload.targetDate)
-    const subject = `【シフト変更】${payload.facilityName} ${date}`
+
+    const subject = payload.isPeriod
+      ? `【シフト変更】${payload.facilityName} ${formatDate(payload.startDate!)}～${formatDate(payload.endDate!)} ${payload.count}件`
+      : payload.isMulti
+      ? `【シフト変更】${payload.facilityName} 複数日（${payload.count}件）`
+      : `【シフト変更】${payload.facilityName} ${formatDateFull(payload.targetDate!)}`
+
     const text = buildText(payload)
 
     const resend = new Resend(apiKey)

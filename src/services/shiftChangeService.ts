@@ -22,6 +22,9 @@ function toDetail(row: DetailRow): ShiftChangeDetail {
     supportFromFacilityId: row.support_from_facility_id ?? null,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
+    originalShift: row.original_shift ?? null,
+    replacementName: row.replacement_name ?? null,
+    replacementOriginalShift: row.replacement_original_shift ?? null,
   }
 }
 
@@ -115,6 +118,9 @@ export const shiftChangeService = {
       is_external_support: d.isExternalSupport,
       support_from_facility_id: d.isExternalSupport && d.supportFromFacilityId ? d.supportFromFacilityId : null,
       sort_order: i,
+      original_shift: d.originalShift ?? null,
+      replacement_name: d.replacementName ?? null,
+      replacement_original_shift: d.replacementOriginalShift ?? null,
     }))
     const { error: detailError } = await supabase.from('shift_change_details').insert(detailRows)
     if (detailError) throw detailError
@@ -148,6 +154,9 @@ export const shiftChangeService = {
       is_external_support: d.isExternalSupport,
       support_from_facility_id: d.isExternalSupport && d.supportFromFacilityId ? d.supportFromFacilityId : null,
       sort_order: i,
+      original_shift: d.originalShift ?? null,
+      replacement_name: d.replacementName ?? null,
+      replacement_original_shift: d.replacementOriginalShift ?? null,
     }))
     const { error: insertError } = await supabase.from('shift_change_details').insert(detailRows)
     if (insertError) throw insertError

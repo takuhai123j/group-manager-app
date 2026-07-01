@@ -278,6 +278,9 @@ export type Database = {
           support_from_facility_id: string | null
           sort_order: number
           created_at: string
+          original_shift: string | null
+          replacement_name: string | null
+          replacement_original_shift: string | null
         }
         Insert: {
           id?: string
@@ -289,6 +292,9 @@ export type Database = {
           support_from_facility_id?: string | null
           sort_order?: number
           created_at?: string
+          original_shift?: string | null
+          replacement_name?: string | null
+          replacement_original_shift?: string | null
         }
         Update: {
           id?: string
@@ -299,6 +305,9 @@ export type Database = {
           is_external_support?: boolean
           support_from_facility_id?: string | null
           sort_order?: number
+          original_shift?: string | null
+          replacement_name?: string | null
+          replacement_original_shift?: string | null
         }
         Relationships: [
           {

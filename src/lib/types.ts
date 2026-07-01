@@ -162,6 +162,9 @@ export interface ShiftChangeDetail {
   supportFromFacilityId: string | null
   sortOrder: number
   createdAt: string
+  originalShift: string | null
+  replacementName: string | null
+  replacementOriginalShift: string | null
 }
 
 export interface ShiftChangeRecord {
@@ -183,6 +186,9 @@ export type CreateShiftChangeDetailInput = {
   changeDetail: string
   isExternalSupport: boolean
   supportFromFacilityId: string | null
+  originalShift?: string | null
+  replacementName?: string | null
+  replacementOriginalShift?: string | null
 }
 
 export type CreateShiftChangeInput = {
