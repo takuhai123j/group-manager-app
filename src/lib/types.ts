@@ -10,6 +10,7 @@ export type EventType =
   | 'kyukyu'        // 公休（全日）
   | 'yukyu'         // 有休（全日）
   | 'hankyuu'       // 半休（時間指定・4時間）
+  | 'han_yukyu'     // 半有休（時間指定・4時間）
   | 'other'         // その他
 
 export type CalendarView = 'month' | 'week' | 'day'

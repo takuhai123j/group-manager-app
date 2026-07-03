@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Trash2, Save, Building2, CalendarDays, Plus, ChevronLeft } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString, formatJa } from '@/lib/utils'
-import { EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime } from '@/constants/eventTypes'
+import { EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime, buildAutoTitle } from '@/constants/eventTypes'
 import type { ScheduleEvent, CreateEventInput, EventType, GroupManager, Facility } from '@/lib/types'
 
 interface EventModalProps {
@@ -132,7 +132,6 @@ export function EventModal({
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormState, string>> = {}
-    if (!form.title.trim()) e.title = 'タイトルを入力してください'
     if (bulkMode === 'single' && !form.date) e.date = '日付を選択してください'
     if (!isAllDay && !isHalfDay) {
       if (!form.date) e.date = '日付を選択してください'
@@ -163,6 +162,16 @@ export function EventModal({
     }
   }
 
+  const resolveFacilityName = (): string => {
+    if (isAllDay || isHalfDay || !form.facilityId) return ''
+    return allFacilities.find(f => f.id === form.facilityId)?.name ?? ''
+  }
+
+  const resolveTitle = (): string => {
+    const trimmed = form.title.trim()
+    return trimmed || buildAutoTitle(form.type, resolveFacilityName())
+  }
+
   const handleSave = useCallback(async () => {
     if (!validate()) return
     setBulkError('')
@@ -188,7 +197,7 @@ export function EventModal({
     try {
       const date = showBulkMode ? (getDatesForBulk()[0] ?? form.date) : form.date
       await onSave({
-        title: form.title.trim(),
+        title: resolveTitle(),
         date,
         startTime: isAllDay ? '00:00' : form.startTime,
         endTime: isAllDay ? '00:00' : form.endTime,
@@ -203,12 +212,13 @@ export function EventModal({
       setSaving(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, isAllDay, showBulkMode, bulkMode, rangeEndDate, multiDateList, onSave, onClose])
+  }, [form, isAllDay, isHalfDay, showBulkMode, bulkMode, rangeEndDate, multiDateList, allFacilities, onSave, onClose])
 
   const handleBulkConfirm = useCallback(async () => {
     const dates = getDatesForBulk()
+    const bulkTitle = resolveTitle()
     const inputs: CreateEventInput[] = dates.map(date => ({
-      title: form.title.trim(),
+      title: bulkTitle,
       date,
       startTime: '00:00',
       endTime: '00:00',
@@ -416,19 +426,15 @@ export function EventModal({
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              タイトル <span className="text-red-500">*</span>
+              タイトル
             </label>
             <input
               type="text"
               value={form.title}
               onChange={e => set('title', e.target.value)}
-              placeholder="例：〇〇施設 巡回"
-              className={cn(
-                'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                errors.title ? 'border-red-400' : 'border-gray-300'
-              )}
+              placeholder="未入力の場合は施設名と種別から自動入力されます"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            {errors.title && <p className="mt-1 text-xs text-red-500">{errors.title}</p>}
           </div>
 
           {/* Type */}

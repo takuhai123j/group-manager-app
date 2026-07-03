@@ -31,6 +31,7 @@ const config: Config = {
     "bg-gray-100", "text-gray-700", "border-gray-300", "bg-gray-500",
     "bg-orange-100", "text-orange-800", "border-orange-300", "bg-orange-500",
     "bg-yellow-100", "text-yellow-800", "border-yellow-300", "bg-yellow-500",
+    "bg-cyan-100", "text-cyan-800", "border-cyan-300", "bg-cyan-500",
     // Group leaders
     "bg-indigo-100", "text-indigo-800", "border-indigo-300", "bg-indigo-500",
     "bg-rose-100", "text-rose-800", "border-rose-300", "bg-rose-500",

@@ -8,6 +8,8 @@ export interface EventTypeConfig {
   borderColor: string
   dotColor: string
   solidBg: string
+  /** タイトル自動生成時に使うラベル（未指定時は label を使用） */
+  autoTitleLabel?: string
 }
 
 export const EVENT_TYPES: EventTypeConfig[] = [
@@ -55,6 +57,7 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     borderColor: 'border-rose-300',
     dotColor: 'bg-rose-500',
     solidBg: '#F43F5E',
+    autoTitleLabel: 'ミーティング',
   },
   {
     value: 'vacancy',
@@ -111,6 +114,15 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     solidBg: '#6366F1',
   },
   {
+    value: 'han_yukyu',
+    label: '半有休',
+    bgColor: 'bg-cyan-100',
+    textColor: 'text-cyan-800',
+    borderColor: 'border-cyan-300',
+    dotColor: 'bg-cyan-500',
+    solidBg: '#06B6D4',
+  },
+  {
     value: 'other',
     label: 'その他',
     bgColor: 'bg-yellow-100',
@@ -134,7 +146,7 @@ export function isAllDayType(type: EventType): boolean {
 }
 
 /** 半休として扱う種別の一覧（時間指定・開始時間+4時間） */
-export const HALF_DAY_EVENT_TYPES: EventType[] = ['hankyuu']
+export const HALF_DAY_EVENT_TYPES: EventType[] = ['hankyuu', 'han_yukyu']
 
 /** 指定種別が半休かどうかを返す */
 export function isHalfDayType(type: EventType): boolean {
@@ -146,4 +158,10 @@ export function computeHalfDayEndTime(startTime: string): string {
   const [h, m] = startTime.split(':').map(Number)
   const endH = h + 4
   return `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+/** 施設名と種別からタイトルを自動生成する（例：施設名「〇〇」＋種別「巡回」→「〇〇巡回」） */
+export function buildAutoTitle(type: EventType, facilityName: string): string {
+  const config = getEventTypeConfig(type)
+  return `${facilityName}${config.autoTitleLabel ?? config.label}`
 }
