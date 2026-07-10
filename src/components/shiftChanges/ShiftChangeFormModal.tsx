@@ -251,7 +251,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
   const handleSaveSingle = async () => {
     if (!form.facilityId)       { setError('施設を選択してください'); return }
     if (!form.targetDate)       { setError('対象日を入力してください'); return }
-    if (!form.handledBy.trim()) { setError('対応者を入力してください'); return }
+    if (!form.handledBy.trim()) { setError('入力者を入力してください'); return }
     if (!form.reason.trim())    { setError('理由を入力してください'); return }
     for (let i = 0; i < details.length; i++) {
       if (!details[i].employeeName.trim()) { setError(`対象者${i + 1}の名前を入力してください`); return }
@@ -324,7 +324,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
       setError('対象日を1日以上選択してください'); return
     }
     if (datesCount === 0)             { setError('対象日を設定してください'); return }
-    if (!periodForm.handledBy.trim()) { setError('対応者を入力してください'); return }
+    if (!periodForm.handledBy.trim()) { setError('入力者を入力してください'); return }
     if (!periodForm.reason.trim())    { setError('理由を入力してください'); return }
     if (!periodEmployeeName.trim())   { setError('対象者を入力してください'); return }
 
@@ -449,7 +449,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                 )}
                 <div><span className="font-medium text-gray-500">登録件数：</span>{pendingInputs.length}件</div>
                 <div><span className="font-medium text-gray-500">施設：</span>{facilityName}</div>
-                <div><span className="font-medium text-gray-500">対応者：</span>{periodForm.handledBy}</div>
+                <div><span className="font-medium text-gray-500">入力者：</span>{periodForm.handledBy}</div>
                 <div><span className="font-medium text-gray-500">理由：</span>{periodForm.reason}</div>
                 {periodForm.memo && <div><span className="font-medium text-gray-500">メモ：</span>{periodForm.memo}</div>}
               </div>
@@ -521,7 +521,7 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">対応者 <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">入力者 <span className="text-red-500">*</span></label>
                   <input type="text" value={form.handledBy} onChange={e => setField('handledBy', e.target.value)}
                     placeholder="例：福田"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -675,10 +675,10 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                 </select>
               </div>
 
-              {/* 共通：対応者・対象者 */}
+              {/* 共通：入力者・対象者 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">対応者 <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">入力者 <span className="text-red-500">*</span></label>
                   <input type="text" value={periodForm.handledBy} onChange={e => setPeriodField('handledBy', e.target.value)}
                     placeholder="例：福田"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
