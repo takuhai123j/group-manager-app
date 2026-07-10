@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown, ArrowLeftRight } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
+import { HelpButton } from '@/components/help/HelpButton'
 import type { CalendarView } from '@/lib/types'
 
 interface CalendarHeaderProps {
@@ -20,6 +21,7 @@ interface CalendarHeaderProps {
   onOpenRounderManager: () => void
   onOpenFieldEmployeeManager: () => void
   onOpenShiftChangeManager: () => void
+  onOpenHelp: () => void
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = { month: '月', week: '週', day: '日' }
@@ -47,6 +49,7 @@ export function CalendarHeader({
   onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
   onOpenLeaderManager, onOpenRounderManager, onOpenFieldEmployeeManager,
   onOpenShiftChangeManager,
+  onOpenHelp,
 }: CalendarHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -185,6 +188,8 @@ export function CalendarHeader({
           <Plus size={15} />
           <span className="hidden sm:inline">予定を追加</span>
         </button>
+
+        <HelpButton onClick={onOpenHelp} />
       </div>
     </header>
   )

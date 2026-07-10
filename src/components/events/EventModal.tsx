@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { X, Trash2, Save, Building2, CalendarDays, Plus, ChevronLeft } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString, formatJa } from '@/lib/utils'
 import { EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime, buildAutoTitle } from '@/constants/eventTypes'
+import { HelpButton } from '@/components/help/HelpButton'
+import { HelpModal } from '@/components/help/HelpModal'
+import { HELP_CONTENT } from '@/constants/helpContent'
 import type { ScheduleEvent, CreateEventInput, EventType, GroupManager, Facility } from '@/lib/types'
 
 interface EventModalProps {
@@ -101,6 +104,7 @@ export function EventModal({
   const [bulkError, setBulkError] = useState('')
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const isAllDay = isAllDayType(form.type)
   const isHalfDay = isHalfDayType(form.type)
@@ -376,9 +380,12 @@ export function EventModal({
           <h2 className="text-base font-semibold text-gray-800">
             {editingEvent ? '予定を編集' : '予定を追加'}
           </h2>
-          <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <HelpButton onClick={() => setHelpOpen(true)} />
+            <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 space-y-4">
@@ -779,6 +786,12 @@ export function EventModal({
           </div>
         </div>
       </div>
+
+      <HelpModal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        content={HELP_CONTENT[isAllDay || isHalfDay ? 'leaveForm' : 'eventForm']}
+      />
     </div>
   )
 }

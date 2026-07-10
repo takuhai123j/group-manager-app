@@ -9,6 +9,9 @@ import {
 } from '@/lib/types'
 import { shiftFileService } from '@/services/shiftFileService'
 import { PdfUploadModal } from './ExcelUploadModal'
+import { HelpButton } from '@/components/help/HelpButton'
+import { HelpModal } from '@/components/help/HelpModal'
+import { HELP_CONTENT } from '@/constants/helpContent'
 
 interface ShiftFileManagerProps {
   isOpen: boolean
@@ -53,6 +56,7 @@ export function ShiftFileManager({
   const [showUpload, setShowUpload] = useState(false)
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const activeFacilities = useMemo(() => facilities.filter(f => f.active), [facilities])
 
@@ -108,6 +112,7 @@ export function ShiftFileManager({
                 <span className="hidden sm:inline">PDFを追加</span>
                 <span className="sm:hidden">追加</span>
               </button>
+              <HelpButton onClick={() => setHelpOpen(true)} />
               <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">
                 <X size={20} />
               </button>
@@ -316,6 +321,12 @@ export function ShiftFileManager({
           onUpload={onUpload}
         />
       )}
+
+      <HelpModal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        content={HELP_CONTENT.shiftFiles}
+      />
     </>
   )
 }

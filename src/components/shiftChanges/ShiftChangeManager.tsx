@@ -5,6 +5,9 @@ import { X, Plus, Filter, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
 import { ShiftChangeFormModal } from './ShiftChangeFormModal'
+import { HelpButton } from '@/components/help/HelpButton'
+import { HelpModal } from '@/components/help/HelpModal'
+import { HELP_CONTENT } from '@/constants/helpContent'
 import type { ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters } from '@/lib/types'
 
 interface Props {
@@ -54,6 +57,7 @@ export function ShiftChangeManager({
   const [fChangeType, setFChangeType] = useState('')
   const [fExternalOnly, setFExternalOnly] = useState(false)
   const [fSupportFacilityId, setFSupportFacilityId] = useState('')
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
     if (isOpen) onReload()
@@ -119,6 +123,7 @@ export function ShiftChangeManager({
               <Plus size={15} />
               <span className="hidden sm:inline">新規登録</span>
             </button>
+            <HelpButton onClick={() => setHelpOpen(true)} variant="dark" />
             <button onClick={onClose} className="p-1.5 rounded-lg text-blue-200 hover:text-white hover:bg-blue-600">
               <X size={18} />
             </button>
@@ -274,6 +279,12 @@ export function ShiftChangeManager({
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
         onDelete={onDelete}
+      />
+
+      <HelpModal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        content={HELP_CONTENT.shiftChange}
       />
     </>
   )

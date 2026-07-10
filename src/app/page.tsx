@@ -26,6 +26,8 @@ import { StaffMemberModal } from '@/components/staff/StaffMemberModal'
 import { useStaffMembers } from '@/hooks/useStaffMembers'
 import { ShiftChangeManager } from '@/components/shiftChanges/ShiftChangeManager'
 import { useShiftChanges } from '@/hooks/useShiftChanges'
+import { HelpModal } from '@/components/help/HelpModal'
+import { HELP_CONTENT } from '@/constants/helpContent'
 import {
   hasLocalStorageData,
   migrateToSupabase,
@@ -241,6 +243,7 @@ export default function HomePage() {
   const [leaderManagerOpen, setLeaderManagerOpen] = useState(false)
   const [rounderManagerOpen, setRounderManagerOpen] = useState(false)
   const [fieldEmployeeManagerOpen, setFieldEmployeeManagerOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
@@ -413,6 +416,7 @@ export default function HomePage() {
         onOpenLeaderManager={() => setLeaderManagerOpen(true)}
         onOpenRounderManager={() => setRounderManagerOpen(true)}
         onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
 
       {/* Filter bar - PC only */}
@@ -577,6 +581,13 @@ export default function HomePage() {
         onMoveUp={moveUp}
         onMoveDown={moveDown}
         onSetFacilities={setDefaultFacilities}
+      />
+
+      {/* ヘルプ（月/週/日表示） */}
+      <HelpModal
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        content={HELP_CONTENT[view === 'month' ? 'monthView' : view === 'week' ? 'weekView' : 'dayView']}
       />
     </div>
   )
