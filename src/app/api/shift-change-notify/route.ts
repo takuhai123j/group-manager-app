@@ -9,8 +9,7 @@ interface NotifyDetail {
   supportFromFacilityName?: string
 }
 
-interface DayNotifyDetail {
-  date: string
+interface DayPersonNotify {
   employeeName: string
   changeType: string
   originalShift?: string
@@ -18,6 +17,11 @@ interface DayNotifyDetail {
   replacementOriginalShift?: string
   isExternalSupport: boolean
   supportFromFacilityName?: string
+}
+
+interface DayNotifyDetail {
+  date: string
+  persons: DayPersonNotify[]
 }
 
 interface NotifyPayload {
@@ -94,14 +98,15 @@ function buildText(p: NotifyPayload): string {
     t += '\n【日別詳細】\n'
     p.dayDetails.forEach(day => {
       t += `\n▶ ${formatDateJP(day.date)}\n`
-      t += `   種別：${day.changeType}\n`
-      t += `   対象者：${day.employeeName}\n`
-      if (day.originalShift) t += `   元シフト：${day.originalShift}\n`
-      if (day.replacementName) {
-        t += `   変更後担当：${day.replacementName}\n`
-        if (day.replacementOriginalShift) t += `   変更後担当の元シフト：${day.replacementOriginalShift}\n`
-      }
-      if (day.isExternalSupport) t += `   他施設応援：${day.supportFromFacilityName ?? 'あり'}\n`
+      day.persons.forEach((person, i) => {
+        t += `   ${i + 1}. ${person.employeeName}（${person.changeType}）\n`
+        if (person.originalShift) t += `      元シフト：${person.originalShift}\n`
+        if (person.replacementName) {
+          t += `      変更後担当：${person.replacementName}\n`
+          if (person.replacementOriginalShift) t += `      変更後担当の元シフト：${person.replacementOriginalShift}\n`
+        }
+        if (person.isExternalSupport) t += `      他施設応援：${person.supportFromFacilityName ?? 'あり'}\n`
+      })
     })
   }
 
