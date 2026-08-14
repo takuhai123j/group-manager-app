@@ -237,6 +237,7 @@ export type Database = {
           memo: string | null
           created_at: string
           updated_at: string
+          related_change_group_id: string | null
         }
         Insert: {
           id?: string
@@ -247,6 +248,7 @@ export type Database = {
           memo?: string | null
           created_at?: string
           updated_at?: string
+          related_change_group_id?: string | null
         }
         Update: {
           id?: string
@@ -256,6 +258,7 @@ export type Database = {
           handled_by?: string
           memo?: string | null
           updated_at?: string
+          related_change_group_id?: string | null
         }
         Relationships: [
           {
@@ -281,6 +284,7 @@ export type Database = {
           original_shift: string | null
           replacement_name: string | null
           replacement_original_shift: string | null
+          compensatory_leave_status: string | null
         }
         Insert: {
           id?: string
@@ -295,6 +299,7 @@ export type Database = {
           original_shift?: string | null
           replacement_name?: string | null
           replacement_original_shift?: string | null
+          compensatory_leave_status?: string | null
         }
         Update: {
           id?: string
@@ -308,6 +313,7 @@ export type Database = {
           original_shift?: string | null
           replacement_name?: string | null
           replacement_original_shift?: string | null
+          compensatory_leave_status?: string | null
         }
         Relationships: [
           {

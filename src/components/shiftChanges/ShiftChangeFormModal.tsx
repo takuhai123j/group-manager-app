@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Save, Trash2, Plus, Minus, CheckSquare } from 'lucide-react'
+import { X, Save, Trash2, Plus, Minus, CheckSquare, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
-import type { ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeType } from '@/lib/types'
+import type {
+  ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeType,
+  CompensatoryLeaveStatus,
+} from '@/lib/types'
 
 interface Props {
   isOpen: boolean
@@ -13,6 +16,9 @@ interface Props {
   onClose: () => void
   onSave: (input: CreateShiftChangeInput) => Promise<ShiftChangeRecord>
   onDelete?: (id: string) => Promise<void>
+  onLoadRelatedGroup: (groupId: string) => Promise<ShiftChangeRecord[]>
+  onCreateLinkedRecord: (input: CreateShiftChangeInput) => Promise<ShiftChangeRecord>
+  onLinkCompensatoryLeave: (detailId: string) => Promise<void>
 }
 
 const MAX_TARGETS = 5
@@ -25,7 +31,14 @@ type DetailDraft = {
   changeDetail: string
   isExternalSupport: boolean
   supportFromFacilityId: string
+  // 単日編集フォームでは変更UIを出さないが、複数日入力で設定された値を編集保存時に消さないよう保持する非表示フィールド
+  originalShift: string | null
+  replacementName: string | null
+  replacementOriginalShift: string | null
+  compensatoryLeaveStatus: CompensatoryLeaveStatus | null
 }
+
+type CompensatoryLeaveTiming = 'now' | 'later'
 
 type DayPersonDraft = {
   changeType: ShiftChangeType
@@ -34,6 +47,12 @@ type DayPersonDraft = {
   replacementOriginalShift: string
   isExternalSupport: boolean
   supportFromFacilityId: string
+  // 振休
+  wantsCompensatoryLeave: boolean
+  compensatoryLeaveTiming: CompensatoryLeaveTiming
+  compensatoryLeaveDate: string
+  compensatoryLeaveDetail: string
+  compensatoryLeaveReplacementName: string
 }
 
 type DayDraft = {
@@ -47,6 +66,10 @@ const EMPTY_DETAIL: DetailDraft = {
   changeDetail: '',
   isExternalSupport: false,
   supportFromFacilityId: '',
+  originalShift: null,
+  replacementName: null,
+  replacementOriginalShift: null,
+  compensatoryLeaveStatus: null,
 }
 
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
@@ -56,6 +79,11 @@ const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
   replacementOriginalShift: '',
   isExternalSupport: false,
   supportFromFacilityId: '',
+  wantsCompensatoryLeave: false,
+  compensatoryLeaveTiming: 'later',
+  compensatoryLeaveDate: '',
+  compensatoryLeaveDetail: '',
+  compensatoryLeaveReplacementName: '',
 }
 
 const EMPTY_FORM = { facilityId: '', targetDate: '', reason: '', handledBy: '', memo: '' }
@@ -108,7 +136,10 @@ const MODE_LABELS: Record<DateMode, string> = {
   multi: '複数日選択',
 }
 
-export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onSave, onDelete }: Props) {
+export function ShiftChangeFormModal({
+  isOpen, editing, facilities, onClose, onSave, onDelete,
+  onLoadRelatedGroup, onCreateLinkedRecord, onLinkCompensatoryLeave,
+}: Props) {
   // ── 単日モード ──
   const [form, setForm] = useState(EMPTY_FORM)
   const [details, setDetails] = useState<DetailDraft[]>([{ ...EMPTY_DETAIL }])
@@ -149,6 +180,17 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
   const [emailWarning, setEmailWarning] = useState<string | null>(null)
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null)
 
+  // ── 関連する振休グループ ──
+  const [relatedRecords, setRelatedRecords] = useState<ShiftChangeRecord[]>([])
+  const [loadingRelated, setLoadingRelated] = useState(false)
+
+  // ── 振休日を後から設定するサブフォーム ──
+  const [linkingDetailId, setLinkingDetailId] = useState<string | null>(null)
+  const [linkForm, setLinkForm] = useState({ date: '', changeDetail: '振休', replacementName: '' })
+  const [linking, setLinking] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [locallyLinkedIds, setLocallyLinkedIds] = useState<Set<string>>(new Set())
+
   const activeFacilities = facilities.filter(f => f.active)
 
   // リセット
@@ -156,6 +198,8 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
     if (!isOpen) return
     setError(null); setEmailSuccess(null); setEmailWarning(null)
     setShowConfirm(false); setPendingInputs([])
+    setRelatedRecords([]); setLinkingDetailId(null); setLinkError(null)
+    setLocallyLinkedIds(new Set())
 
     if (editing) {
       setDateMode('single')
@@ -175,6 +219,11 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
               changeDetail: d.changeDetail,
               isExternalSupport: d.isExternalSupport,
               supportFromFacilityId: d.supportFromFacilityId ?? '',
+              // 複数日入力で設定された値は編集UIで表示・変更しないが、保存時に消えないよう保持する
+              originalShift: d.originalShift,
+              replacementName: d.replacementName,
+              replacementOriginalShift: d.replacementOriginalShift,
+              compensatoryLeaveStatus: d.compensatoryLeaveStatus,
             }))
           : [{ ...EMPTY_DETAIL }]
       )
@@ -193,6 +242,18 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
       setBulk({ changeType: '欠勤', originalShift: '', replacementName: '', replacementOriginalShift: '', isExternalSupport: false, supportFromFacilityId: '' })
     }
   }, [isOpen, editing])
+
+  // 関連する振休グループの取得（編集対象がグループに属する場合）
+  useEffect(() => {
+    if (!isOpen || !editing?.relatedChangeGroupId) { setRelatedRecords([]); return }
+    const groupId = editing.relatedChangeGroupId
+    setLoadingRelated(true)
+    onLoadRelatedGroup(groupId)
+      .then(recs => setRelatedRecords(recs.filter(r => r.id !== editing.id)))
+      .catch(() => setRelatedRecords([]))
+      .finally(() => setLoadingRelated(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editing?.id, editing?.relatedChangeGroupId])
 
   // 期間モード → dayDrafts
   useEffect(() => {
@@ -253,7 +314,8 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
   const applyBulk = () => {
     setDayDrafts(prev => prev.map(d => ({
       ...d,
-      persons: d.persons.map(() => ({
+      persons: d.persons.map(existing => ({
+        ...existing,
         changeType: bulk.changeType,
         originalShift: bulk.originalShift,
         replacementName: bulk.replacementName,
@@ -302,7 +364,13 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
           changeDetail: d.changeDetail,
           isExternalSupport: d.isExternalSupport,
           supportFromFacilityId: d.isExternalSupport ? d.supportFromFacilityId || null : null,
+          // 複数日入力由来の値は編集UIにないため、既存値をそのまま引き継ぐ
+          originalShift: d.originalShift,
+          replacementName: d.replacementName,
+          replacementOriginalShift: d.replacementOriginalShift,
+          compensatoryLeaveStatus: d.compensatoryLeaveStatus,
         })),
+        relatedChangeGroupId: editing?.relatedChangeGroupId ?? null,
       })
       if (!editing) {
         try {
@@ -357,26 +425,82 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
     for (let i = 0; i < periodEmployeeNames.length; i++) {
       if (!periodEmployeeNames[i].trim()) { setError(`対象者${i + 1}の名前を入力してください`); return }
     }
+    for (const d of dayDrafts) {
+      for (const p of d.persons) {
+        if (p.replacementName.trim() && p.wantsCompensatoryLeave && p.compensatoryLeaveTiming === 'now' && !p.compensatoryLeaveDate) {
+          setError(`${formatDateJP(d.date)}の振休日を入力してください`); return
+        }
+      }
+    }
 
     const trimmedNames = periodEmployeeNames.map(n => n.trim())
-    const inputs: CreateShiftChangeInput[] = dayDrafts.map(d => ({
-      facilityId: periodForm.facilityId,
-      targetDate: d.date,
-      reason: periodForm.reason,
-      handledBy: periodForm.handledBy,
-      memo: periodForm.memo,
-      details: d.persons.map((p, idx) => ({
-        employeeName: trimmedNames[idx],
-        changeType: p.changeType,
-        changeDetail: buildChangeDetail(p),
-        isExternalSupport: p.isExternalSupport,
-        supportFromFacilityId: p.isExternalSupport ? p.supportFromFacilityId || null : null,
-        originalShift: p.originalShift || null,
-        replacementName: p.replacementName || null,
-        replacementOriginalShift: p.replacementOriginalShift || null,
-      })),
-    }))
-    setPendingInputs(inputs)
+
+    // 振休を設定する対象者がいる日には、代替出勤日と振休日を紐付けるグループIDを発行する
+    const dayGroupIds = new Map<number, string>()
+    const inputs: CreateShiftChangeInput[] = dayDrafts.map((d, dayIdx) => {
+      const detailInputs = d.persons.map((p, idx) => {
+        const wantsLeave = p.replacementName.trim() !== '' && p.wantsCompensatoryLeave
+        if (wantsLeave && !dayGroupIds.has(dayIdx)) dayGroupIds.set(dayIdx, crypto.randomUUID())
+        return {
+          employeeName: trimmedNames[idx],
+          changeType: p.changeType,
+          changeDetail: buildChangeDetail(p),
+          isExternalSupport: p.isExternalSupport,
+          supportFromFacilityId: p.isExternalSupport ? p.supportFromFacilityId || null : null,
+          originalShift: p.originalShift || null,
+          replacementName: p.replacementName || null,
+          replacementOriginalShift: p.replacementOriginalShift || null,
+          compensatoryLeaveStatus: wantsLeave
+            ? (p.compensatoryLeaveTiming === 'now' ? 'linked' as const : 'unset' as const)
+            : null,
+        }
+      })
+      return {
+        facilityId: periodForm.facilityId,
+        targetDate: d.date,
+        reason: periodForm.reason,
+        handledBy: periodForm.handledBy,
+        memo: periodForm.memo,
+        details: detailInputs,
+        relatedChangeGroupId: dayGroupIds.get(dayIdx) ?? null,
+      }
+    })
+
+    // 振休日を同時に設定した分の追加レコードを生成
+    const compensatoryInputs: CreateShiftChangeInput[] = []
+    dayDrafts.forEach((d, dayIdx) => {
+      d.persons.forEach(p => {
+        if (!p.replacementName.trim() || !p.wantsCompensatoryLeave) return
+        if (p.compensatoryLeaveTiming !== 'now' || !p.compensatoryLeaveDate) return
+        const leaveDetails: CreateShiftChangeInput['details'] = [{
+          employeeName: p.replacementName.trim(),
+          changeType: '振休',
+          changeDetail: p.compensatoryLeaveDetail.trim() || '振休',
+          isExternalSupport: false,
+          supportFromFacilityId: null,
+        }]
+        if (p.compensatoryLeaveReplacementName.trim()) {
+          leaveDetails.push({
+            employeeName: p.compensatoryLeaveReplacementName.trim(),
+            changeType: '交代出勤',
+            changeDetail: `${p.replacementName.trim()}の振休対応で代替出勤`,
+            isExternalSupport: false,
+            supportFromFacilityId: null,
+          })
+        }
+        compensatoryInputs.push({
+          facilityId: periodForm.facilityId,
+          targetDate: p.compensatoryLeaveDate,
+          reason: periodForm.reason,
+          handledBy: periodForm.handledBy,
+          memo: periodForm.memo,
+          details: leaveDetails,
+          relatedChangeGroupId: dayGroupIds.get(dayIdx) ?? null,
+        })
+      })
+    })
+
+    setPendingInputs([...inputs, ...compensatoryInputs])
     setError(null)
     setShowConfirm(true)
   }
@@ -441,6 +565,74 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
     else handleSaveMultiDay()
   }
 
+  // ── 振休日を後から設定 ──
+  const handleLinkCompensatoryLeave = async () => {
+    if (!editing || !linkingDetailId) return
+    const targetDetail = editing.details.find(d => d.id === linkingDetailId)
+    if (!targetDetail) return
+    if (!linkForm.date) { setLinkError('振休日を入力してください'); return }
+
+    setLinking(true); setLinkError(null)
+    try {
+      // 代替出勤日の登録時に発行済みのグループIDを引き継ぐ（通常は必ず存在する）
+      const groupId = editing.relatedChangeGroupId ?? crypto.randomUUID()
+
+      const leaveDetails: CreateShiftChangeInput['details'] = [{
+        employeeName: targetDetail.employeeName,
+        changeType: '振休',
+        changeDetail: linkForm.changeDetail.trim() || '振休',
+        isExternalSupport: false,
+        supportFromFacilityId: null,
+      }]
+      if (linkForm.replacementName.trim()) {
+        leaveDetails.push({
+          employeeName: linkForm.replacementName.trim(),
+          changeType: '交代出勤',
+          changeDetail: `${targetDetail.employeeName}の振休対応で代替出勤`,
+          isExternalSupport: false,
+          supportFromFacilityId: null,
+        })
+      }
+
+      const saved = await onCreateLinkedRecord({
+        facilityId: editing.facilityId,
+        targetDate: linkForm.date,
+        reason: editing.reason,
+        handledBy: editing.handledBy,
+        memo: '',
+        details: leaveDetails,
+        relatedChangeGroupId: groupId,
+      })
+      await onLinkCompensatoryLeave(linkingDetailId)
+      setLocallyLinkedIds(prev => new Set(prev).add(linkingDetailId))
+      setRelatedRecords(prev => [...prev, saved])
+      setLinkingDetailId(null)
+
+      // 通知メール送信（失敗しても記録の保存には影響しない）
+      try {
+        await fetch('/api/shift-change-notify', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isCompensatoryLeaveUpdate: true,
+            facilityName: saved.facilityName,
+            originalDate: editing.targetDate,
+            compensatoryDate: saved.targetDate,
+            employeeName: targetDetail.employeeName,
+            replacementName: linkForm.replacementName.trim() || undefined,
+            reason: editing.reason,
+            handledBy: editing.handledBy,
+          }),
+        })
+      } catch {
+        // 通知失敗はここでは無視する（記録自体は保存済みのため）
+      }
+    } catch {
+      setLinkError('振休日の設定に失敗しました')
+    } finally {
+      setLinking(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!editing || !onDelete) return
     if (!confirm('この記録を削除しますか？')) return
@@ -484,11 +676,14 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                 {periodForm.memo && <div><span className="font-medium text-gray-500">メモ：</span>{periodForm.memo}</div>}
               </div>
               <div className="space-y-1.5">
-                {pendingInputs.map(inp => (
-                  <div key={inp.targetDate} className="px-3 py-2 bg-blue-50 rounded-lg text-sm space-y-1">
+                {pendingInputs.map((inp, inpIdx) => (
+                  <div key={`${inp.targetDate}-${inpIdx}`} className="px-3 py-2 bg-blue-50 rounded-lg text-sm space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-blue-800 w-20 flex-shrink-0">{formatDateJP(inp.targetDate)}</span>
                       <span className="text-blue-600 text-xs">{inp.details.length}名</span>
+                      {inp.details.some(d => d.changeType === '振休') && (
+                        <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">振休</span>
+                      )}
                     </div>
                     {inp.details.map((det, i) => (
                       <div key={i} className="flex items-center gap-2 pl-1 flex-wrap">
@@ -648,6 +843,98 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                   </button>
                 )}
               </div>
+
+              {/* ── 関連する振休 ── */}
+              {editing && (
+                <div className="border-t pt-3">
+                  <p className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-1.5">
+                    <Link2 size={13} />関連する振休
+                  </p>
+                  {loadingRelated ? (
+                    <p className="text-xs text-gray-400">読み込み中…</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                        <p className="font-semibold text-gray-700 mb-1.5">{formatDateJP(editing.targetDate)}（この記録）</p>
+                        {editing.details.map(d => {
+                          const isUnset = d.compensatoryLeaveStatus === 'unset' && !locallyLinkedIds.has(d.id)
+                          return (
+                            <div key={d.id} className="flex items-center gap-2 flex-wrap text-xs text-gray-600 mb-1">
+                              <span>{d.employeeName}　{d.changeType}</span>
+                              {isUnset && (
+                                <>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">振休未設定</span>
+                                  <button type="button"
+                                    onClick={() => {
+                                      setLinkingDetailId(d.id)
+                                      setLinkForm({ date: '', changeDetail: '振休', replacementName: '' })
+                                      setLinkError(null)
+                                    }}
+                                    className="text-purple-600 underline hover:text-purple-800">
+                                    振休日を設定
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {relatedRecords.length > 0 && (
+                        <>
+                          <p className="text-center text-xs text-purple-600">↓ 振休</p>
+                          {relatedRecords.map(r => (
+                            <div key={r.id} className="px-3 py-2 bg-purple-50 rounded-lg border border-purple-200 text-sm">
+                              <p className="font-semibold text-purple-800 mb-1.5">{formatDateJP(r.targetDate)}</p>
+                              {r.details.map(d => (
+                                <p key={d.id} className="text-xs text-purple-700">{d.employeeName}　{d.changeType}</p>
+                              ))}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {linkingDetailId && (
+                    <div className="mt-3 p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-2">
+                      <p className="text-xs font-semibold text-purple-800">振休日を設定</p>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">振休日 <span className="text-red-500">*</span></label>
+                        <input type="date" value={linkForm.date}
+                          onChange={e => setLinkForm(f => ({ ...f, date: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">変更内容</label>
+                        <input type="text" value={linkForm.changeDetail}
+                          onChange={e => setLinkForm(f => ({ ...f, changeDetail: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          振休日の代替出勤者 <span className="text-gray-400 font-normal">（任意）</span>
+                        </label>
+                        <input type="text" value={linkForm.replacementName}
+                          onChange={e => setLinkForm(f => ({ ...f, replacementName: e.target.value }))}
+                          placeholder="例：鈴木パート"
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      </div>
+                      {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button type="button" onClick={() => setLinkingDetailId(null)} disabled={linking}
+                          className="px-3 py-1.5 rounded-lg text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                          キャンセル
+                        </button>
+                        <button type="button" onClick={handleLinkCompensatoryLeave} disabled={linking}
+                          className="px-3 py-1.5 rounded-lg text-xs bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60">
+                          {linking ? '設定中…' : '設定する'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -877,6 +1164,65 @@ export function ShiftChangeFormModal({ isOpen, editing, facilities, onClose, onS
                               placeholder="例：休み、09:00～13:00、未定"
                               className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                           </div>
+
+                          {/* 振休 */}
+                          {p.replacementName.trim() !== '' && (
+                            <div className="mb-2 pt-2 border-t border-gray-200">
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox" checked={p.wantsCompensatoryLeave}
+                                  onChange={e => updateDayPerson(dayIdx, personIdx, {
+                                    wantsCompensatoryLeave: e.target.checked,
+                                    compensatoryLeaveTiming: e.target.checked ? p.compensatoryLeaveTiming : 'later',
+                                  })}
+                                  className="w-4 h-4 rounded accent-purple-600" />
+                                <span className="text-xs font-medium text-gray-700">振休を設定する（{p.replacementName}）</span>
+                              </label>
+                              {p.wantsCompensatoryLeave && (
+                                <div className="mt-2 pl-1 space-y-2">
+                                  <div className="flex gap-4">
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                      <input type="radio" checked={p.compensatoryLeaveTiming === 'now'}
+                                        onChange={() => updateDayPerson(dayIdx, personIdx, { compensatoryLeaveTiming: 'now' })}
+                                        className="w-3.5 h-3.5 accent-purple-600" />
+                                      <span className="text-xs text-gray-700">振休日を同時に設定</span>
+                                    </label>
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                      <input type="radio" checked={p.compensatoryLeaveTiming === 'later'}
+                                        onChange={() => updateDayPerson(dayIdx, personIdx, { compensatoryLeaveTiming: 'later' })}
+                                        className="w-3.5 h-3.5 accent-purple-600" />
+                                      <span className="text-xs text-gray-700">振休日は後で設定</span>
+                                    </label>
+                                  </div>
+                                  {p.compensatoryLeaveTiming === 'now' && (
+                                    <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">振休日 <span className="text-red-500">*</span></label>
+                                        <input type="date" value={p.compensatoryLeaveDate}
+                                          onChange={e => updateDayPerson(dayIdx, personIdx, { compensatoryLeaveDate: e.target.value })}
+                                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">振休日の変更内容</label>
+                                        <input type="text" value={p.compensatoryLeaveDetail}
+                                          onChange={e => updateDayPerson(dayIdx, personIdx, { compensatoryLeaveDetail: e.target.value })}
+                                          placeholder="振休"
+                                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                                          振休日の代替出勤者 <span className="text-gray-400 font-normal">（任意）</span>
+                                        </label>
+                                        <input type="text" value={p.compensatoryLeaveReplacementName}
+                                          onChange={e => updateDayPerson(dayIdx, personIdx, { compensatoryLeaveReplacementName: e.target.value })}
+                                          placeholder="例：鈴木パート"
+                                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* 他施設応援 */}
                           <div className="pt-2 border-t border-gray-200">

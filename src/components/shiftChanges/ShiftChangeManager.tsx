@@ -20,6 +20,8 @@ interface Props {
   onUpdate: (id: string, input: CreateShiftChangeInput) => Promise<ShiftChangeRecord>
   onDelete: (id: string) => Promise<void>
   onReload: (filters?: Partial<ShiftChangeFilters>) => Promise<void>
+  onLoadRelatedGroup: (groupId: string) => Promise<ShiftChangeRecord[]>
+  onLinkCompensatoryLeave: (detailId: string) => Promise<void>
 }
 
 const CHANGE_TYPE_COLORS: Record<string, string> = {
@@ -28,6 +30,7 @@ const CHANGE_TYPE_COLORS: Record<string, string> = {
   早退: 'bg-yellow-100 text-yellow-700',
   時間変更: 'bg-purple-100 text-purple-700',
   交代出勤: 'bg-blue-100 text-blue-700',
+  振休: 'bg-indigo-100 text-indigo-700',
   その他: 'bg-gray-100 text-gray-700',
   // 旧データ互換
   交代: 'bg-blue-100 text-blue-700',
@@ -44,6 +47,7 @@ function formatDateFull(s: string): string {
 export function ShiftChangeManager({
   isOpen, records, loading, facilities,
   onClose, onAdd, onUpdate, onDelete, onReload,
+  onLoadRelatedGroup, onLinkCompensatoryLeave,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ShiftChangeRecord | null>(null)
@@ -253,6 +257,11 @@ export function ShiftChangeManager({
                               他施設応援{supportName ? `：${supportName}` : ''}
                             </span>
                           )}
+                          {d.compensatoryLeaveStatus === 'unset' && (
+                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                              振休未設定
+                            </span>
+                          )}
                         </div>
                       )
                     })}
@@ -279,6 +288,9 @@ export function ShiftChangeManager({
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
         onDelete={onDelete}
+        onLoadRelatedGroup={onLoadRelatedGroup}
+        onCreateLinkedRecord={onAdd}
+        onLinkCompensatoryLeave={onLinkCompensatoryLeave}
       />
 
       <HelpModal

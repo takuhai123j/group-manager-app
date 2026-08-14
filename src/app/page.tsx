@@ -156,6 +156,8 @@ export default function HomePage() {
     addRecord: addShiftChange,
     updateRecord: updateShiftChange,
     deleteRecord: deleteShiftChange,
+    loadGroup: loadShiftChangeGroup,
+    linkCompensatoryLeave: linkShiftChangeCompensatoryLeave,
   } = useShiftChanges()
 
   const {
@@ -516,6 +518,8 @@ export default function HomePage() {
         onUpdate={updateShiftChange}
         onDelete={deleteShiftChange}
         onReload={reloadShiftChanges}
+        onLoadRelatedGroup={loadShiftChangeGroup}
+        onLinkCompensatoryLeave={linkShiftChangeCompensatoryLeave}
       />
 
       {/* シフト表管理 */}

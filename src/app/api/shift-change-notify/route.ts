@@ -42,6 +42,12 @@ interface NotifyPayload {
   reason: string
   handledBy: string
   memo: string
+  // 振休日を後日設定した場合の通知
+  isCompensatoryLeaveUpdate?: boolean
+  originalDate?: string
+  compensatoryDate?: string
+  employeeName?: string
+  replacementName?: string
 }
 
 function formatDate(s: string): string {
@@ -63,6 +69,18 @@ function formatDateJP(s: string): string {
 }
 
 function buildText(p: NotifyPayload): string {
+  if (p.isCompensatoryLeaveUpdate) {
+    let t = `施設：${p.facilityName}\n`
+    t += `代替出勤日：${formatDateFull(p.originalDate!)}\n`
+    t += `振休日：${formatDateFull(p.compensatoryDate!)}\n`
+    t += `理由：${p.reason}\n`
+    t += `対応者：${p.handledBy}\n`
+    t += `\n【振休日の内容】\n`
+    t += `${p.employeeName}　振休\n`
+    if (p.replacementName) t += `代替出勤：${p.replacementName}\n`
+    return t
+  }
+
   let t = `施設：${p.facilityName}\n`
 
   if (p.isPeriod) {
@@ -136,7 +154,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SHIFT_CHANGE_NOTIFY_FROM が設定されていません' }, { status: 500 })
     }
 
-    const subject = payload.isPeriod
+    const subject = payload.isCompensatoryLeaveUpdate
+      ? `【振休設定】${payload.facilityName} ${payload.employeeName} ${formatDateFull(payload.compensatoryDate!)}`
+      : payload.isPeriod
       ? `【シフト変更】${payload.facilityName} ${formatDate(payload.startDate!)}～${formatDate(payload.endDate!)} ${payload.count}件`
       : payload.isMulti
       ? `【シフト変更】${payload.facilityName} 複数日（${payload.count}件）`

@@ -148,10 +148,16 @@ export type StaffMemberInput = {
 }
 
 export const SHIFT_CHANGE_TYPES = [
-  '欠勤', '遅刻', '早退', '時間変更', '交代出勤', 'その他',
+  '欠勤', '遅刻', '早退', '時間変更', '交代出勤', '振休', 'その他',
 ] as const
 
 export type ShiftChangeType = typeof SHIFT_CHANGE_TYPES[number]
+
+// 代替出勤者の振休対応状況（対象者明細単位）
+// 'unset'  = 代替出勤は確定したが振休取得日はまだ未定
+// 'linked' = 振休取得日の記録と紐付け済み（または、その振休取得日自体の明細）
+export const COMPENSATORY_LEAVE_STATUSES = ['unset', 'linked'] as const
+export type CompensatoryLeaveStatus = typeof COMPENSATORY_LEAVE_STATUSES[number]
 
 export interface ShiftChangeDetail {
   id: string
@@ -166,6 +172,7 @@ export interface ShiftChangeDetail {
   originalShift: string | null
   replacementName: string | null
   replacementOriginalShift: string | null
+  compensatoryLeaveStatus: CompensatoryLeaveStatus | null
 }
 
 export interface ShiftChangeRecord {
@@ -179,6 +186,7 @@ export interface ShiftChangeRecord {
   details: ShiftChangeDetail[]
   createdAt: string
   updatedAt: string
+  relatedChangeGroupId: string | null
 }
 
 export type CreateShiftChangeDetailInput = {
@@ -190,6 +198,7 @@ export type CreateShiftChangeDetailInput = {
   originalShift?: string | null
   replacementName?: string | null
   replacementOriginalShift?: string | null
+  compensatoryLeaveStatus?: CompensatoryLeaveStatus | null
 }
 
 export type CreateShiftChangeInput = {
@@ -199,6 +208,7 @@ export type CreateShiftChangeInput = {
   handledBy: string
   memo: string
   details: CreateShiftChangeDetailInput[]
+  relatedChangeGroupId?: string | null
 }
 
 export interface ShiftChangeFilters {

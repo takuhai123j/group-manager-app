@@ -41,6 +41,20 @@ export function useShiftChanges() {
     setRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
+  // 振休対応グループ（related_change_group_id）に属するレコード一覧を取得
+  const loadGroup = useCallback(async (groupId: string): Promise<ShiftChangeRecord[]> => {
+    return shiftChangeService.getByGroupId(groupId)
+  }, [])
+
+  // 代替出勤者の明細に「振休日を設定済み」を反映する
+  const linkCompensatoryLeave = useCallback(async (detailId: string): Promise<void> => {
+    await shiftChangeService.setDetailCompensatoryLeaveLinked(detailId)
+    setRecords(prev => prev.map(r => ({
+      ...r,
+      details: r.details.map(d => d.id === detailId ? { ...d, compensatoryLeaveStatus: 'linked' as const } : d),
+    })))
+  }, [])
+
   return {
     records,
     loading,
@@ -49,5 +63,7 @@ export function useShiftChanges() {
     addRecord,
     updateRecord,
     deleteRecord,
+    loadGroup,
+    linkCompensatoryLeave,
   }
 }

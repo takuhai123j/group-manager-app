@@ -25,6 +25,7 @@ function toDetail(row: DetailRow): ShiftChangeDetail {
     originalShift: row.original_shift ?? null,
     replacementName: row.replacement_name ?? null,
     replacementOriginalShift: row.replacement_original_shift ?? null,
+    compensatoryLeaveStatus: (row.compensatory_leave_status as ShiftChangeDetail['compensatoryLeaveStatus']) ?? null,
   }
 }
 
@@ -43,6 +44,7 @@ function toRecord(row: ParentRow): ShiftChangeRecord {
     details,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    relatedChangeGroupId: row.related_change_group_id ?? null,
   }
 }
 
@@ -94,6 +96,28 @@ export const shiftChangeService = {
     return toRecord(data as ParentRow)
   },
 
+  // 同じ振休対応グループ（related_change_group_id）に属するレコード一覧（対象日順）
+  async getByGroupId(groupId: string): Promise<ShiftChangeRecord[]> {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('shift_change_records')
+      .select('*, facilities(name), shift_change_details(*)')
+      .eq('related_change_group_id', groupId)
+      .order('target_date', { ascending: true })
+    if (error) throw error
+    return (data ?? []).map(row => toRecord(row as ParentRow))
+  },
+
+  // 代替出勤者の対象者明細に「振休日を設定済み」を反映する（振休レコードを後から作成した際に呼ぶ）
+  async setDetailCompensatoryLeaveLinked(detailId: string): Promise<void> {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('shift_change_details')
+      .update({ compensatory_leave_status: 'linked' })
+      .eq('id', detailId)
+    if (error) throw error
+  },
+
   async create(input: CreateShiftChangeInput): Promise<ShiftChangeRecord> {
     const supabase = createClient()
 
@@ -105,6 +129,7 @@ export const shiftChangeService = {
         reason: input.reason,
         handled_by: input.handledBy,
         memo: input.memo || null,
+        related_change_group_id: input.relatedChangeGroupId ?? null,
       })
       .select('id')
       .single()
@@ -121,6 +146,7 @@ export const shiftChangeService = {
       original_shift: d.originalShift ?? null,
       replacement_name: d.replacementName ?? null,
       replacement_original_shift: d.replacementOriginalShift ?? null,
+      compensatory_leave_status: d.compensatoryLeaveStatus ?? null,
     }))
     const { error: detailError } = await supabase.from('shift_change_details').insert(detailRows)
     if (detailError) throw detailError
@@ -137,6 +163,7 @@ export const shiftChangeService = {
       reason: input.reason,
       handled_by: input.handledBy,
       memo: input.memo || null,
+      related_change_group_id: input.relatedChangeGroupId ?? null,
     }
     const { error: updateError } = await supabase
       .from('shift_change_records').update(patch).eq('id', id)
@@ -157,6 +184,7 @@ export const shiftChangeService = {
       original_shift: d.originalShift ?? null,
       replacement_name: d.replacementName ?? null,
       replacement_original_shift: d.replacementOriginalShift ?? null,
+      compensatory_leave_status: d.compensatoryLeaveStatus ?? null,
     }))
     const { error: insertError } = await supabase.from('shift_change_details').insert(detailRows)
     if (insertError) throw insertError
