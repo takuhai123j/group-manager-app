@@ -42,6 +42,9 @@ interface MeetingPlanManagerProps {
   onToggleFrequencyActive: (id: string) => Promise<void>
   onUploadMinute: (meeting: Meeting, file: File) => Promise<MeetingMinute>
   onDeleteMinute: (minute: MeetingMinute) => Promise<void>
+  onMoveTargetMonth: (meetingId: string, newTargetMonth: string) => Promise<void>
+  onMoveTargetMonthCascade: (meetingId: string, newTargetMonth: string) => Promise<void>
+  onDeleteMeeting: (meetingId: string) => Promise<void>
 }
 
 type Tab = 'plan' | 'frequencies' | 'minutes'
@@ -79,6 +82,7 @@ export function MeetingPlanManager({
   meetings, frequencies, loading, error,
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onSaveFrequency, onToggleFrequencyActive, onUploadMinute, onDeleteMinute,
+  onMoveTargetMonth, onMoveTargetMonthCascade, onDeleteMeeting,
 }: MeetingPlanManagerProps) {
   const [tab, setTab] = useState<Tab>('plan')
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
@@ -335,6 +339,18 @@ export function MeetingPlanManager({
         }}
         onUploadMinute={onUploadMinute}
         onDeleteMinute={onDeleteMinute}
+        onMoveTargetMonth={async newTargetMonth => {
+          if (!selectedCell?.meeting) return
+          await onMoveTargetMonth(selectedCell.meeting.id, newTargetMonth)
+        }}
+        onMoveTargetMonthCascade={async newTargetMonth => {
+          if (!selectedCell?.meeting) return
+          await onMoveTargetMonthCascade(selectedCell.meeting.id, newTargetMonth)
+        }}
+        onDeleteMeeting={async () => {
+          if (!selectedCell?.meeting) return
+          await onDeleteMeeting(selectedCell.meeting.id)
+        }}
       />
 
       <HelpModal

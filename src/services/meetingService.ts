@@ -3,6 +3,7 @@ import type { Database } from '@/types/database'
 import type {
   Meeting, MeetingType, CreateManualMeetingInput, UpdateMeetingInput,
 } from '@/lib/types'
+import { parseTargetMonth, buildTargetMonth } from '@/lib/meetingPlan'
 
 // JOIN を含む SELECT フィールド定義
 // meeting_minutes(count) は行を取得せず件数のみ取得する PostgREST の集計構文
@@ -337,5 +338,154 @@ export const meetingService = {
     }
 
     return { insertedMonths, deletedMonths }
+  },
+
+  // ---------------------------------------------------------
+  // 年間計画の手動調整（cycle_anchor_yearのような恒久的な周期変更は行わない。
+  // meeting_frequencies（start_month/interval_months）には一切触れず、
+  // 既存 meetings 行の target_month を直接動かすだけのシンプルな機能）
+  // ---------------------------------------------------------
+
+  // 同一施設・同一MT種別・同一target_monthの既存行があるか確認する
+  // （UNIQUE制約に当たる前にUI側で分かりやすいエラーを出すための事前チェック）
+  async hasTargetMonthConflict(
+    facilityId: string,
+    meetingType: MeetingType,
+    targetMonth: string,
+    excludeId?: string
+  ): Promise<boolean> {
+    const supabase = createClient()
+    let query = supabase
+      .from('meetings')
+      .select('id')
+      .eq('facility_id', facilityId)
+      .eq('meeting_type', meetingType)
+      .eq('target_month', normalizeTargetMonth(targetMonth))
+    if (excludeId) query = query.neq('id', excludeId)
+    const { data, error } = await query
+    if (error) throw error
+    return (data ?? []).length > 0
+  },
+
+  // 計画月を移動する（このMTだけ）。schedules側には一切触れない。
+  async moveTargetMonth(id: string, newTargetMonth: string): Promise<Meeting> {
+    const meeting = await meetingService.getById(id)
+    const normalized = normalizeTargetMonth(newTargetMonth)
+    if (normalized === meeting.targetMonth) return meeting
+
+    const conflict = await meetingService.hasTargetMonthConflict(
+      meeting.facilityId, meeting.meetingType, normalized, id
+    )
+    if (conflict) {
+      throw new Error('移動先の月には既にMTの計画があります')
+    }
+    return meetingService.update(id, { targetMonth: normalized })
+  },
+
+  // 計画月を移動し、「今回以降」の未確定・自動生成MTも同じ月数だけまとめて移動する。
+  // meeting_frequencies（start_month/interval_months）は変更しない。
+  //
+  // 移動対象の条件（すべて満たすものだけ）:
+  //   ・同一 facility_id / meeting_type / frequency_id（自動生成行）
+  //   ・target_month が今回のMTより後
+  //   ・schedule_id が NULL（日程未確定）
+  //   ・status が 'scheduled'（未実施）
+  //   ・meeting_minutes が存在しない（議事録なし）
+  // 上記を満たさない行（日程確定済・実施済・議事録あり・手動追加・今回より前）は
+  // 対象から除外し、絶対に変更しない。
+  //
+  // 移動前に全移動先の重複チェックを行い、1件でも衝突があれば
+  // 何も更新せずエラーにする（部分的な更新を避ける）。
+  async moveTargetMonthCascade(
+    id: string,
+    newTargetMonth: string
+  ): Promise<{ moved: Meeting; shifted: Meeting[] }> {
+    const supabase = createClient()
+    const meeting = await meetingService.getById(id)
+    const normalizedNew = normalizeTargetMonth(newTargetMonth)
+    if (normalizedNew === meeting.targetMonth) {
+      return { moved: meeting, shifted: [] }
+    }
+
+    const { year: oldYear, month: oldMonth } = parseTargetMonth(meeting.targetMonth)
+    const { year: newYear, month: newMonth } = parseTargetMonth(normalizedNew)
+    const deltaMonths = (newYear * 12 + newMonth) - (oldYear * 12 + oldMonth)
+
+    // 移動候補（同じ自動生成シリーズのうち、今回より後で未着手のもの）
+    let candidates: Meeting[] = []
+    if (meeting.frequencyId) {
+      const { data: candidateRows, error: candErr } = await supabase
+        .from('meetings')
+        .select(SELECT_WITH_JOINS)
+        .eq('facility_id', meeting.facilityId)
+        .eq('meeting_type', meeting.meetingType)
+        .eq('frequency_id', meeting.frequencyId)
+        .gt('target_month', meeting.targetMonth)
+      if (candErr) throw candErr
+      candidates = (candidateRows ?? [])
+        .map(row => toMeeting(row as unknown as MeetingRow))
+        .filter(m => m.scheduleId === null && m.status === 'scheduled' && m.minutesCount === 0)
+    }
+
+    // 移動先を計算
+    const moves: Array<{ id: string; to: string }> = [{ id: meeting.id, to: normalizedNew }]
+    for (const c of candidates) {
+      const { year, month } = parseTargetMonth(c.targetMonth)
+      const absIndex = year * 12 + month + deltaMonths
+      const toYear = Math.floor((absIndex - 1) / 12)
+      const toMonth = ((absIndex - 1) % 12) + 1
+      moves.push({ id: c.id, to: buildTargetMonth(toYear, toMonth) })
+    }
+
+    // 移動先同士の重複チェック
+    const destinations = new Set<string>()
+    for (const mv of moves) {
+      if (destinations.has(mv.to)) {
+        throw new Error(`移動先の月が重複しています（${mv.to}）`)
+      }
+      destinations.add(mv.to)
+    }
+
+    // 移動対象外の既存行との衝突チェック（更新前にすべて確認する）
+    const movingIds = new Set(moves.map(m => m.id))
+    const { data: existingAtDestinations, error: existErr } = await supabase
+      .from('meetings')
+      .select('id, target_month')
+      .eq('facility_id', meeting.facilityId)
+      .eq('meeting_type', meeting.meetingType)
+      .in('target_month', Array.from(destinations))
+    if (existErr) throw existErr
+    const conflictRow = (existingAtDestinations ?? []).find(row => !movingIds.has(row.id))
+    if (conflictRow) {
+      throw new Error(`移動先の月（${conflictRow.target_month}）には既に別のMTの計画があります`)
+    }
+
+    // 事前チェックがすべて通ってから更新する
+    const updated: Meeting[] = []
+    for (const mv of moves) {
+      updated.push(await meetingService.update(mv.id, { targetMonth: mv.to }))
+    }
+
+    const moved = updated.find(m => m.id === meeting.id)!
+    const shifted = updated.filter(m => m.id !== meeting.id)
+    return { moved, shifted }
+  },
+
+  // この月の予定（meeting 1件）を削除する。meeting_frequenciesは変更しない。
+  // 削除できるのは 日程未確定・未実施・議事録なし の場合のみ。
+  async deleteIfSafe(id: string): Promise<void> {
+    const supabase = createClient()
+    const meeting = await meetingService.getById(id)
+    if (meeting.scheduleId !== null) {
+      throw new Error('日程確定済みのMTは削除できません。先に日程を取り消してください')
+    }
+    if (meeting.status !== 'scheduled') {
+      throw new Error('実施済みのMTは削除できません')
+    }
+    if (meeting.minutesCount > 0) {
+      throw new Error('議事録が登録されているMTは削除できません')
+    }
+    const { error } = await supabase.from('meetings').delete().eq('id', id)
+    if (error) throw error
   },
 }

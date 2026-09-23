@@ -164,6 +164,9 @@ export default function HomePage() {
     toggleFrequencyActive: toggleMeetingFrequencyActive,
     uploadMinute: uploadMeetingMinute,
     deleteMinute: deleteMeetingMinute,
+    moveTargetMonth: moveMeetingTargetMonth,
+    moveTargetMonthCascade: moveMeetingTargetMonthCascade,
+    deleteMeeting: deleteMeetingRecord,
   } = useMeetingPlan(meetingPlanYear)
 
   const {
@@ -574,6 +577,9 @@ export default function HomePage() {
         onToggleFrequencyActive={toggleMeetingFrequencyActive}
         onUploadMinute={uploadMeetingMinute}
         onDeleteMinute={deleteMeetingMinute}
+        onMoveTargetMonth={moveMeetingTargetMonth}
+        onMoveTargetMonthCascade={moveMeetingTargetMonthCascade}
+        onDeleteMeeting={deleteMeetingRecord}
       />
 
       {/* リーダー管理モーダル */}

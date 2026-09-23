@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   X, CalendarClock, CalendarCheck, CalendarX, CheckCircle2, Plus,
-  FileText, Upload, ExternalLink, Trash2,
+  FileText, Upload, ExternalLink, Trash2, ArrowRightLeft,
 } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString } from '@/lib/utils'
 import { parseTargetMonth, getMeetingCellStatus, MEETING_CELL_STATUS_LABELS } from '@/lib/meetingPlan'
@@ -30,9 +30,12 @@ interface MeetingCellModalProps {
   onMarkDone: (executedDate?: string) => Promise<void>
   onUploadMinute: (meeting: Meeting, file: File) => Promise<MeetingMinute>
   onDeleteMinute: (minute: MeetingMinute) => Promise<void>
+  onMoveTargetMonth: (newTargetMonth: string) => Promise<void>
+  onMoveTargetMonthCascade: (newTargetMonth: string) => Promise<void>
+  onDeleteMeeting: () => Promise<void>
 }
 
-type Mode = 'view' | 'confirm' | 'reschedule' | 'markDone' | 'add'
+type Mode = 'view' | 'confirm' | 'reschedule' | 'markDone' | 'add' | 'moveMonth'
 
 const TIME_SLOTS = generateTimeSlots(8, 20)
 
@@ -58,6 +61,7 @@ export function MeetingCellModal({
   candidateManagers,
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onUploadMinute, onDeleteMinute,
+  onMoveTargetMonth, onMoveTargetMonthCascade, onDeleteMeeting,
 }: MeetingCellModalProps) {
   const [mode, setMode] = useState<Mode>('view')
   const [saving, setSaving] = useState(false)
@@ -69,6 +73,8 @@ export function MeetingCellModal({
   const [endTime, setEndTime] = useState('11:00')
   const [groupManagerId, setGroupManagerId] = useState('')
   const [executedDate, setExecutedDate] = useState(toDateString(new Date()))
+  const [moveMonth, setMoveMonth] = useState('')
+  const [moveCascade, setMoveCascade] = useState(false)
 
   const [minutes, setMinutes] = useState<MeetingMinute[]>([])
   const [minutesLoading, setMinutesLoading] = useState(false)
@@ -89,6 +95,8 @@ export function MeetingCellModal({
     // 実施日は「今日」を勝手に初期値にしない。
     // schedule_idがあり予定日が取得できる場合のみ、その予定日を初期値にする
     setExecutedDate(meeting?.scheduleId && meeting?.scheduleDate ? meeting.scheduleDate : '')
+    setMoveMonth(meeting ? meeting.targetMonth.slice(0, 7) : '')
+    setMoveCascade(false)
     setMinutesError('')
   }, [isOpen, meeting, candidateManagers])
 
@@ -154,6 +162,25 @@ export function MeetingCellModal({
   const handleMarkDone = () => {
     if (!executedDate) { setError('実施日を入力してください'); return }
     runAction(() => onMarkDone(executedDate))
+  }
+
+  const handleMoveMonth = () => {
+    if (!meeting) return
+    if (!moveMonth) { setError('新しい計画月を選択してください'); return }
+    const newTargetMonth = `${moveMonth}-01`
+    if (newTargetMonth === meeting.targetMonth) { setError('現在の計画月と同じです'); return }
+    runAction(() =>
+      moveCascade && meeting.frequencyId
+        ? onMoveTargetMonthCascade(newTargetMonth)
+        : onMoveTargetMonth(newTargetMonth)
+    )
+  }
+
+  const handleDeleteMeeting = () => {
+    if (!meeting) return
+    const { month } = parseTargetMonth(meeting.targetMonth)
+    if (!confirm(`${facilityName} ${month}月の${MEETING_TYPE_LABELS[meetingType]}予定を削除しますか？`)) return
+    runAction(() => onDeleteMeeting())
   }
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,6 +328,21 @@ export function MeetingCellModal({
                     className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-medium hover:bg-emerald-50"
                   >
                     <CheckCircle2 size={16} />実施済にする
+                  </button>
+                )}
+                <button
+                  onClick={() => setMode('moveMonth')}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+                >
+                  <ArrowRightLeft size={16} />計画月を変更
+                </button>
+                {!meeting.scheduleId && meeting.status === 'scheduled' && meeting.minutesCount === 0 && (
+                  <button
+                    onClick={handleDeleteMeeting}
+                    disabled={saving}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 size={16} />この月の予定を削除
                   </button>
                 )}
               </div>
@@ -467,6 +509,69 @@ export function MeetingCellModal({
             </div>
           )}
 
+          {/* 計画月の変更フォーム（target_monthの手動調整。schedules/meeting_frequenciesには触れない） */}
+          {mode === 'moveMonth' && meeting && (
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">計画月を変更</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  年間計画上の予定月を移動します（日程確定済みの予定日は変更されません）。
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  新しい計画月 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="month"
+                  value={moveMonth}
+                  onChange={e => { setMoveMonth(e.target.value); setError('') }}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                    error ? 'border-red-400' : 'border-gray-300'
+                  )}
+                />
+              </div>
+
+              {meeting.frequencyId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">移動範囲</label>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setMoveCascade(false)}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors',
+                        !moveCascade
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      )}
+                    >
+                      このMTだけ移動
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMoveCascade(true)}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors',
+                        moveCascade
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      )}
+                    >
+                      今回以降の未確定予定も同じ月数だけ移動
+                    </button>
+                    {moveCascade && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                        このMTを新しい基準として、今後の未確定MTの予定月も変更します
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
 
@@ -490,6 +595,7 @@ export function MeetingCellModal({
                   mode === 'add' ? handleAdd :
                   mode === 'confirm' ? handleConfirm :
                   mode === 'reschedule' ? handleReschedule :
+                  mode === 'moveMonth' ? handleMoveMonth :
                   handleMarkDone
                 }
                 disabled={saving}
@@ -498,10 +604,12 @@ export function MeetingCellModal({
                 {mode === 'add' && <Plus size={16} />}
                 {mode === 'confirm' && <CalendarCheck size={16} />}
                 {mode === 'markDone' && <CheckCircle2 size={16} />}
+                {mode === 'moveMonth' && <ArrowRightLeft size={16} />}
                 {saving
                   ? '保存中…'
                   : mode === 'add' ? '追加する'
                   : mode === 'markDone' ? '実施済みにする'
+                  : mode === 'moveMonth' ? '移動する'
                   : '保存'}
               </button>
             </>

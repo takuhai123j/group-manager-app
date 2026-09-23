@@ -97,6 +97,22 @@ export function useMeetingPlan(year: number) {
     await load()
   }, [load])
 
+  // 計画月の手動調整（年間計画そのものの直接編集。schedules/meeting_frequenciesには触れない）
+  const moveTargetMonth = useCallback(async (meetingId: string, newTargetMonth: string): Promise<void> => {
+    await meetingService.moveTargetMonth(meetingId, newTargetMonth)
+    await load()
+  }, [load])
+
+  const moveTargetMonthCascade = useCallback(async (meetingId: string, newTargetMonth: string): Promise<void> => {
+    await meetingService.moveTargetMonthCascade(meetingId, newTargetMonth)
+    await load()
+  }, [load])
+
+  const deleteMeeting = useCallback(async (meetingId: string): Promise<void> => {
+    await meetingService.deleteIfSafe(meetingId)
+    await load()
+  }, [load])
+
   return {
     meetings,
     frequencies,
@@ -112,5 +128,8 @@ export function useMeetingPlan(year: number) {
     toggleFrequencyActive,
     uploadMinute,
     deleteMinute,
+    moveTargetMonth,
+    moveTargetMonthCascade,
+    deleteMeeting,
   }
 }
