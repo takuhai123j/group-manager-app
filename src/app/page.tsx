@@ -10,6 +10,7 @@ import { useGroupManagers } from '@/hooks/useGroupManagers'
 import { useManagerFacilities } from '@/hooks/useManagerFacilities'
 import { useAnnouncements } from '@/hooks/useAnnouncements'
 import { useShiftFiles } from '@/hooks/useShiftFiles'
+import { useMeetingPlan } from '@/hooks/useMeetingPlan'
 import { StaffTabs, type RoleTab, ALL_PERSON_ID } from '@/components/StaffTabs'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
@@ -22,6 +23,7 @@ import { GroupManagerModal } from '@/components/managers/GroupManagerModal'
 import { AnnouncementBanner } from '@/components/announcements/AnnouncementBanner'
 import { AnnouncementAdmin } from '@/components/announcements/AnnouncementAdmin'
 import { ShiftFileManager } from '@/components/shifts/ShiftFileManager'
+import { MeetingPlanManager } from '@/components/meetings/MeetingPlanManager'
 import { StaffMemberModal } from '@/components/staff/StaffMemberModal'
 import { useStaffMembers } from '@/hooks/useStaffMembers'
 import { ShiftChangeManager } from '@/components/shiftChanges/ShiftChangeManager'
@@ -149,6 +151,21 @@ export default function HomePage() {
     remove: removeShiftFile,
   } = useShiftFiles()
 
+  const [meetingPlanYear, setMeetingPlanYear] = useState(() => new Date().getFullYear())
+  const {
+    meetings, frequencies: meetingFrequencies,
+    loading: meetingPlanLoading, error: meetingPlanError,
+    addManual: addMeetingManual,
+    confirmSchedule: confirmMeetingSchedule,
+    rescheduleMeeting,
+    cancelSchedule: cancelMeetingSchedule,
+    markDone: markMeetingDone,
+    saveFrequency: saveMeetingFrequency,
+    toggleFrequencyActive: toggleMeetingFrequencyActive,
+    uploadMinute: uploadMeetingMinute,
+    deleteMinute: deleteMeetingMinute,
+  } = useMeetingPlan(meetingPlanYear)
+
   const {
     records: shiftChangeRecords,
     loading: shiftChangesLoading,
@@ -242,6 +259,7 @@ export default function HomePage() {
   const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
   const [shiftManagerOpen, setShiftManagerOpen] = useState(false)
   const [shiftChangeManagerOpen, setShiftChangeManagerOpen] = useState(false)
+  const [meetingPlanOpen, setMeetingPlanOpen] = useState(false)
   const [leaderManagerOpen, setLeaderManagerOpen] = useState(false)
   const [rounderManagerOpen, setRounderManagerOpen] = useState(false)
   const [fieldEmployeeManagerOpen, setFieldEmployeeManagerOpen] = useState(false)
@@ -415,6 +433,7 @@ export default function HomePage() {
         onOpenFacilityManager={openFacilityManager}
         onOpenShiftManager={() => setShiftManagerOpen(true)}
         onOpenShiftChangeManager={() => setShiftChangeManagerOpen(true)}
+        onOpenMeetingPlan={() => setMeetingPlanOpen(true)}
         onOpenLeaderManager={() => setLeaderManagerOpen(true)}
         onOpenRounderManager={() => setRounderManagerOpen(true)}
         onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
@@ -531,6 +550,30 @@ export default function HomePage() {
         onClose={() => setShiftManagerOpen(false)}
         onUpload={uploadShiftFile}
         onDelete={removeShiftFile}
+      />
+
+      {/* MT年間計画 */}
+      <MeetingPlanManager
+        isOpen={meetingPlanOpen}
+        year={meetingPlanYear}
+        onYearChange={setMeetingPlanYear}
+        facilities={facilities}
+        activeManagers={activeManagers}
+        managerFacilities={managerFacilities}
+        meetings={meetings}
+        frequencies={meetingFrequencies}
+        loading={meetingPlanLoading}
+        error={meetingPlanError}
+        onClose={() => setMeetingPlanOpen(false)}
+        onAddManual={addMeetingManual}
+        onConfirmSchedule={confirmMeetingSchedule}
+        onReschedule={rescheduleMeeting}
+        onCancelSchedule={cancelMeetingSchedule}
+        onMarkDone={markMeetingDone}
+        onSaveFrequency={saveMeetingFrequency}
+        onToggleFrequencyActive={toggleMeetingFrequencyActive}
+        onUploadMinute={uploadMeetingMinute}
+        onDeleteMinute={deleteMeetingMinute}
       />
 
       {/* リーダー管理モーダル */}

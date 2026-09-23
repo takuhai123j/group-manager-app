@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown, ArrowLeftRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Building2, Users, FileText, ChevronDown, ArrowLeftRight, CalendarRange } from 'lucide-react'
 import { cn, formatJa } from '@/lib/utils'
 import { HelpButton } from '@/components/help/HelpButton'
 import type { CalendarView } from '@/lib/types'
@@ -21,6 +21,7 @@ interface CalendarHeaderProps {
   onOpenRounderManager: () => void
   onOpenFieldEmployeeManager: () => void
   onOpenShiftChangeManager: () => void
+  onOpenMeetingPlan: () => void
   onOpenHelp: () => void
 }
 
@@ -49,6 +50,7 @@ export function CalendarHeader({
   onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
   onOpenLeaderManager, onOpenRounderManager, onOpenFieldEmployeeManager,
   onOpenShiftChangeManager,
+  onOpenMeetingPlan,
   onOpenHelp,
 }: CalendarHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -127,6 +129,16 @@ export function CalendarHeader({
         >
           <FileText size={15} />
           <span className="hidden sm:inline">PDF資料</span>
+        </button>
+
+        {/* MT年間計画 */}
+        <button
+          onClick={onOpenMeetingPlan}
+          className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-indigo-200 text-indigo-600 text-sm hover:bg-indigo-50 transition-colors"
+          title="MT年間計画"
+        >
+          <CalendarRange size={15} />
+          <span className="hidden sm:inline">MT年間計画</span>
         </button>
 
         {/* 管理ドロップダウン - PC only */}

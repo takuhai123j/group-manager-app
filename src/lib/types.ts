@@ -221,3 +221,134 @@ export interface ShiftChangeFilters {
   isExternalSupport: string   // 'true' | ''
   supportFacilityId: string
 }
+
+export type MeetingType = 'facility' | 'kitchen'
+
+export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
+  facility: '施設MT',
+  kitchen: '厨房MT',
+}
+
+// DB保存値。'議事録登録済' は保存せず meeting_minutes の有無から導出する
+export type MeetingStatus = 'scheduled' | 'done'
+
+// 画面表示用の3段階ステータス（保存はしない、都度導出する値）
+export type MeetingDisplayStatus = 'scheduled' | 'done' | 'minutes_registered'
+
+export const MEETING_DISPLAY_STATUS_LABELS: Record<MeetingDisplayStatus, string> = {
+  scheduled: '予定',
+  done: '実施済',
+  minutes_registered: '議事録登録済',
+}
+
+// scheduled → 予定 / done+議事録なし → 実施済 / done+議事録あり → 議事録登録済
+export function getMeetingDisplayStatus(meeting: Pick<Meeting, 'status' | 'minutesCount'>): MeetingDisplayStatus {
+  if (meeting.status === 'scheduled') return 'scheduled'
+  return meeting.minutesCount > 0 ? 'minutes_registered' : 'done'
+}
+
+export interface MeetingFrequency {
+  id: string
+  facilityId: string
+  meetingType: MeetingType
+  intervalMonths: number
+  startMonth: number
+  active: boolean
+  memo: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MeetingFrequencyInput = {
+  facilityId: string
+  meetingType: MeetingType
+  intervalMonths: number
+  startMonth: number
+  memo: string
+}
+
+export interface Meeting {
+  id: string
+  facilityId: string
+  facilityName: string
+  meetingType: MeetingType
+  targetMonth: string        // YYYY-MM-01 固定
+  frequencyId: string | null // null = 手動追加（年間計画の自動再生成の対象外）
+  scheduleId: string | null  // 日程確定後に紐づく schedules.id
+  scheduleDate: string | null // schedules.date（日程確定済みの場合のみ。正はschedules側）
+  scheduleGroupManagerName: string | null // 日程確定済みの場合の担当G長名（表示用）
+  status: MeetingStatus
+  executedDate: string | null
+  minutesCount: number       // meeting_minutes の件数（表示ステータス導出用）
+  memo: string
+  createdAt: string
+  updatedAt: string
+}
+
+// 手動追加（frequency_id は常に null）
+export type CreateManualMeetingInput = {
+  facilityId: string
+  meetingType: MeetingType
+  targetMonth: string
+  memo?: string
+}
+
+export type UpdateMeetingInput = {
+  targetMonth?: string
+  memo?: string
+}
+
+export interface MeetingMinute {
+  id: string
+  meetingId: string
+  fileName: string
+  filePath: string
+  uploadedAt: string
+  memo: string | null
+}
+
+export type CreateMeetingMinuteInput = {
+  meetingId: string
+  fileName: string
+  filePath: string
+  memo?: string | null
+}
+
+// 施設ごとの議事録履歴一覧（MeetingMinute + 親meetingの情報を1行に展開したもの）
+export interface MeetingMinuteHistoryItem {
+  id: string
+  meetingId: string
+  facilityId: string
+  facilityName: string
+  meetingType: MeetingType
+  targetMonth: string
+  executedDate: string | null
+  fileName: string
+  filePath: string
+  uploadedAt: string
+}
+
+export type MeetingMinuteHistoryFilters = {
+  facilityId?: string
+  meetingType?: MeetingType
+  year?: number
+}
+
+// MTの日程確定（meetings.schedule_id が未設定の場合のみ使用可）
+export type ConfirmMeetingScheduleInput = {
+  date: string
+  startTime?: string   // 未指定時 '10:00'
+  endTime?: string     // 未指定時 '11:00'
+  isAllDay?: boolean   // 未指定時 false
+  groupManagerId?: string  // 施設に有効なG長が複数いる場合は指定必須
+  memo?: string
+}
+
+// MTの日程変更（meetings.schedule_id が設定済みの場合のみ使用可。target_monthは変更しない）
+export type RescheduleMeetingInput = {
+  date?: string
+  startTime?: string
+  endTime?: string
+  isAllDay?: boolean
+  groupManagerId?: string
+}

@@ -325,6 +325,147 @@ export type Database = {
           },
         ]
       }
+      meeting_frequencies: {
+        Row: {
+          id: string
+          facility_id: string
+          meeting_type: 'facility' | 'kitchen'
+          interval_months: number
+          start_month: number
+          active: boolean
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          facility_id: string
+          meeting_type: 'facility' | 'kitchen'
+          interval_months: number
+          start_month?: number
+          active?: boolean
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          facility_id?: string
+          meeting_type?: 'facility' | 'kitchen'
+          interval_months?: number
+          start_month?: number
+          active?: boolean
+          memo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'meeting_frequencies_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          id: string
+          facility_id: string
+          meeting_type: 'facility' | 'kitchen'
+          target_month: string
+          frequency_id: string | null
+          schedule_id: string | null
+          status: 'scheduled' | 'done'
+          executed_date: string | null
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          facility_id: string
+          meeting_type: 'facility' | 'kitchen'
+          target_month: string
+          frequency_id?: string | null
+          schedule_id?: string | null
+          status?: 'scheduled' | 'done'
+          executed_date?: string | null
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          facility_id?: string
+          meeting_type?: 'facility' | 'kitchen'
+          target_month?: string
+          frequency_id?: string | null
+          schedule_id?: string | null
+          status?: 'scheduled' | 'done'
+          executed_date?: string | null
+          memo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'meetings_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'meetings_frequency_id_fkey'
+            columns: ['frequency_id']
+            isOneToOne: false
+            referencedRelation: 'meeting_frequencies'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'meetings_schedule_id_fkey'
+            columns: ['schedule_id']
+            isOneToOne: false
+            referencedRelation: 'schedules'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      meeting_minutes: {
+        Row: {
+          id: string
+          meeting_id: string
+          file_name: string
+          file_path: string
+          uploaded_at: string
+          memo: string | null
+        }
+        Insert: {
+          id?: string
+          meeting_id: string
+          file_name: string
+          file_path: string
+          uploaded_at?: string
+          memo?: string | null
+        }
+        Update: {
+          id?: string
+          meeting_id?: string
+          file_name?: string
+          file_path?: string
+          uploaded_at?: string
+          memo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'meeting_minutes_meeting_id_fkey'
+            columns: ['meeting_id']
+            isOneToOne: false
+            referencedRelation: 'meetings'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       shift_files: {
         Row: {
           id: string

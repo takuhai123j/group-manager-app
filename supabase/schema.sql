@@ -238,6 +238,131 @@ CREATE POLICY "anon_all_staff_members" ON staff_members
   FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
 
 -- -------------------------------------------------------
+-- Meeting Frequencies（施設ごとのMT頻度設定）
+-- meeting_type: 'facility'（施設MT） | 'kitchen'（厨房MT）
+-- 施設×MT種別ごとに何ヶ月おきに実施するかを設定する。
+-- 物理削除はせず active=false で無効化する運用を想定（他マスタと同様）。
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meeting_frequencies (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id      UUID        NOT NULL REFERENCES facilities(id),
+  meeting_type     TEXT        NOT NULL,
+  interval_months  SMALLINT    NOT NULL,
+  start_month      SMALLINT    NOT NULL DEFAULT 1,
+  active           BOOLEAN     NOT NULL DEFAULT TRUE,
+  memo             TEXT        NOT NULL DEFAULT '',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT meeting_frequencies_type_check
+    CHECK (meeting_type IN ('facility', 'kitchen')),
+  CONSTRAINT meeting_frequencies_interval_check
+    CHECK (interval_months BETWEEN 1 AND 12),
+  CONSTRAINT meeting_frequencies_start_month_check
+    CHECK (start_month BETWEEN 1 AND 12),
+  CONSTRAINT meeting_frequencies_unique
+    UNIQUE (facility_id, meeting_type)
+);
+
+DROP TRIGGER IF EXISTS trg_meeting_frequencies_updated_at ON meeting_frequencies;
+CREATE TRIGGER trg_meeting_frequencies_updated_at
+  BEFORE UPDATE ON meeting_frequencies
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE meeting_frequencies ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_meeting_frequencies" ON meeting_frequencies;
+CREATE POLICY "anon_all_meeting_frequencies" ON meeting_frequencies
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- -------------------------------------------------------
+-- Meetings（MT年間計画〜実施状況。1レコード = 1回のMT予定。暦年(1〜12月)で管理）
+-- status: 'scheduled'（予定） | 'done'（実施済）
+-- 「議事録登録済」は status に持たず、meeting_minutes の有無から画面側で判定する
+--   scheduled                    → 予定
+--   done かつ meeting_minutesなし → 実施済
+--   done かつ meeting_minutesあり → 議事録登録済
+-- frequency_id が NULL の行は手動追加（年間計画の自動再生成の対象外として保護する）
+-- schedule_id は具体的な日程が決まった際に schedules と連携するための参照（任意）
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meetings (
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id    UUID        NOT NULL REFERENCES facilities(id),
+  meeting_type   TEXT        NOT NULL,
+  target_month   DATE        NOT NULL,
+  frequency_id   UUID        REFERENCES meeting_frequencies(id) ON DELETE SET NULL,
+  schedule_id    UUID        REFERENCES schedules(id) ON DELETE SET NULL,
+  status         TEXT        NOT NULL DEFAULT 'scheduled',
+  executed_date  DATE,
+  memo           TEXT        NOT NULL DEFAULT '',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT meetings_type_check
+    CHECK (meeting_type IN ('facility', 'kitchen')),
+  CONSTRAINT meetings_status_check
+    CHECK (status IN ('scheduled', 'done')),
+  CONSTRAINT meetings_target_month_first_day_check
+    CHECK (EXTRACT(DAY FROM target_month) = 1),
+  CONSTRAINT meetings_unique_month
+    UNIQUE (facility_id, meeting_type, target_month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_meetings_facility_id  ON meetings(facility_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_target_month ON meetings(target_month);
+CREATE INDEX IF NOT EXISTS idx_meetings_status       ON meetings(status);
+CREATE INDEX IF NOT EXISTS idx_meetings_schedule_id  ON meetings(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_frequency_id ON meetings(frequency_id);
+
+DROP TRIGGER IF EXISTS trg_meetings_updated_at ON meetings;
+CREATE TRIGGER trg_meetings_updated_at
+  BEFORE UPDATE ON meetings
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE meetings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_meetings" ON meetings;
+CREATE POLICY "anon_all_meetings" ON meetings
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- -------------------------------------------------------
+-- Meeting Minutes（MT議事録PDFのメタデータ。1件のMTに対し複数可）
+-- 実体ファイルは Storage の meeting-minutes バケット（private）に保存する
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meeting_minutes (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  meeting_id   UUID        NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  file_name    TEXT        NOT NULL,
+  file_path    TEXT        NOT NULL,
+  uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  memo         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_meeting_minutes_meeting_id ON meeting_minutes(meeting_id);
+
+ALTER TABLE meeting_minutes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_meeting_minutes" ON meeting_minutes;
+CREATE POLICY "anon_all_meeting_minutes" ON meeting_minutes
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- Storage: meeting-minutes バケット作成（private。shift-filesとは分離）
+-- 認証は導入しないため、shift-files と同様に anon ロールに対して
+-- バケットを限定した全操作ポリシーを付与する。
+-- public=false のため、閲覧は getPublicUrl ではなく
+-- createSignedUrl（期限付きURL）をアプリ側で都度発行する運用とする。
+-- 将来 Supabase Auth を導入する際は、このポリシーを
+-- authenticated ロール向けに見直すことを前提とする。
+-- ※ Supabase Dashboard > SQL Editor で実行してください
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('meeting-minutes', 'meeting-minutes', false)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "anon_all_meeting_minutes_objects" ON storage.objects;
+CREATE POLICY "anon_all_meeting_minutes_objects" ON storage.objects
+  FOR ALL TO anon
+  USING (bucket_id = 'meeting-minutes')
+  WITH CHECK (bucket_id = 'meeting-minutes');
+
+-- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）
 -- -------------------------------------------------------
 -- ALTER TABLE group_managers ADD COLUMN IF NOT EXISTS org_id UUID;

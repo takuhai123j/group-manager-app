@@ -1,4 +1,4 @@
-import { EventType } from '@/lib/types'
+import { EventType, MeetingType } from '@/lib/types'
 
 export interface EventTypeConfig {
   value: EventType
@@ -164,4 +164,10 @@ export function computeHalfDayEndTime(startTime: string): string {
 export function buildAutoTitle(type: EventType, facilityName: string): string {
   const config = getEventTypeConfig(type)
   return `${facilityName}${config.autoTitleLabel ?? config.label}`
+}
+
+/** MTの日程確定時にschedules.titleへ設定するタイトルを自動生成する（type='mt'固定） */
+export function buildMeetingScheduleTitle(meetingType: MeetingType, facilityName: string): string {
+  const label = meetingType === 'kitchen' ? '厨房内MT' : '施設MT'
+  return `${facilityName}${label}`
 }
