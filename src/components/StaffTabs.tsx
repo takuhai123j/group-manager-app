@@ -6,16 +6,17 @@ import type { GroupManager, StaffMember } from '@/lib/types'
 export type RoleTab = 'all' | 'group_manager' | 'leader' | 'rounder' | 'field_employee'
 export const ALL_PERSON_ID = 'all'
 
+// 表示名のみ。role の値（'group_manager' 等）と絞り込みロジックは変更しない
 const ROLE_LABELS: Record<RoleTab, string> = {
   all: '全員',
-  group_manager: 'G長',
+  group_manager: 'G長・主任',
   leader: 'リーダー',
   rounder: 'ラウンダー',
   field_employee: '現場社員',
 }
 
 const ALL_PERSON_LABELS: Record<Exclude<RoleTab, 'all'>, string> = {
-  group_manager: '全G長',
+  group_manager: '全G長・主任',
   leader: '全リーダー',
   rounder: '全ラウンダー',
   field_employee: '全現場社員',
