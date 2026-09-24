@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useLayoutEffect } from 'react'
-import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History, ChevronDown } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History, ChevronDown, HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   MEETING_TYPE_ORDER, MONTHS_IN_YEAR, MEETING_CELL_STATUS_LABELS,
@@ -23,6 +23,7 @@ import { MeetingDashboard } from './MeetingDashboard'
 import { HelpButton } from '@/components/help/HelpButton'
 import { HelpModal } from '@/components/help/HelpModal'
 import { HELP_CONTENT } from '@/constants/helpContent'
+import { MANUALS } from '@/constants/manuals'
 
 interface MeetingPlanManagerProps {
   isOpen: boolean
@@ -198,11 +199,26 @@ export function MeetingPlanManager({
 
           {/* ヘッダー */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-white z-10 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <CalendarRange size={20} className="text-blue-600" />
-              <h2 className="text-base font-semibold text-gray-800">MT年間計画</h2>
+            {/* タイトル + 操作マニュアル（PDFを別タブで開く）。どのタブを表示していても同じ場所から開ける。
+                スマホはヘッダー幅が足りないため、タイトルの下に2段で表示する */}
+            <div className="flex items-center gap-2 min-w-0">
+              {/* スマホは幅を確保するためアイコンを省略（年の切替ボタンと重ならないように） */}
+              <CalendarRange size={20} className="hidden sm:block text-blue-600 flex-shrink-0" />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+                <h2 className="text-base font-semibold text-gray-800 leading-tight whitespace-nowrap">MT年間計画</h2>
+                <a
+                  href={MANUALS.meetingPlan.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 self-start sm:self-auto px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md border border-blue-200 text-blue-700 text-xs font-medium hover:bg-blue-50 whitespace-nowrap"
+                  title="MT年間計画の操作マニュアル（PDF）を新しいタブで開く"
+                >
+                  <HelpCircle size={13} />
+                  {MANUALS.meetingPlan.label}
+                </a>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button onClick={() => onYearChange(year - 1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600" aria-label="前年">
                 <ChevronLeft size={18} />
               </button>
