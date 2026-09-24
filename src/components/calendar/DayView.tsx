@@ -86,7 +86,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
               {allDayEvents.map(event => {
                 const typeConfig = getEventTypeConfig(event.type)
                 const manager = managers.find(m => m.id === event.groupLeaderId)
-                const barColor = manager?.color ?? '#6B7280'
+                const barColor = manager?.color ?? event.staffMemberColor ?? '#6B7280'
                 return (
                   <button
                     key={event.id}
@@ -116,7 +116,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
             {timedEventsSorted.map(event => {
               const typeConfig = getEventTypeConfig(event.type)
               const manager = managers.find(m => m.id === event.groupLeaderId)
-              const barColor = manager?.color ?? '#6B7280'
+              const barColor = manager?.color ?? event.staffMemberColor ?? '#6B7280'
               const defaultIds = managerFacilities[event.groupLeaderId] ?? []
               const isOutside = !!event.facilityId && defaultIds.length > 0 && !defaultIds.includes(event.facilityId)
               return (
@@ -171,7 +171,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
             const typeConfig = getEventTypeConfig(event.type)
             const manager = managers.find(m => m.id === event.groupLeaderId)
             const cardStyle = colorMode === 'leader'
-              ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
+              ? { ...getManagerColorStyle(manager?.color ?? event.staffMemberColor ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
               : undefined
             const cardClass = colorMode === 'type'
               ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor, 'border')
@@ -230,7 +230,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
               const colL = event.columnIndex * colW
 
               const cardStyle = colorMode === 'leader'
-                ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
+                ? { ...getManagerColorStyle(manager?.color ?? event.staffMemberColor ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
                 : undefined
               const cardClass = colorMode === 'type'
                 ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor)
@@ -273,7 +273,7 @@ export function DayView({ currentDate, events, managers, managerFacilities, colo
                   )}
                   {height >= 76 && (
                     <div className="flex items-center gap-1 mt-0.5">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: manager?.color ?? '#6B7280' }} />
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: manager?.color ?? event.staffMemberColor ?? '#6B7280' }} />
                       <p className="text-xs opacity-70 truncate">{event.groupLeaderName}</p>
                     </div>
                   )}

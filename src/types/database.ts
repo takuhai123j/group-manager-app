@@ -139,10 +139,11 @@ export type Database = {
           date: string
           end_time: string
           facility_id: string | null
-          group_manager_id: string
+          group_manager_id: string | null
           id: string
           is_all_day: boolean
           memo: string
+          staff_member_id: string | null
           start_time: string
           title: string
           type: string
@@ -153,10 +154,11 @@ export type Database = {
           date: string
           end_time: string
           facility_id?: string | null
-          group_manager_id: string
+          group_manager_id?: string | null
           id?: string
           is_all_day?: boolean
           memo?: string
+          staff_member_id?: string | null
           start_time: string
           title: string
           type?: string
@@ -166,10 +168,11 @@ export type Database = {
           date?: string
           end_time?: string
           facility_id?: string | null
-          group_manager_id?: string
+          group_manager_id?: string | null
           id?: string
           is_all_day?: boolean
           memo?: string
+          staff_member_id?: string | null
           start_time?: string
           title?: string
           type?: string
@@ -188,6 +191,13 @@ export type Database = {
             columns: ['facility_id']
             isOneToOne: false
             referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'schedules_staff_member_id_fkey'
+            columns: ['staff_member_id']
+            isOneToOne: false
+            referencedRelation: 'staff_members'
             referencedColumns: ['id']
           },
         ]

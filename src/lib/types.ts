@@ -50,8 +50,10 @@ export interface ScheduleEvent {
   type: EventType
   isAllDay: boolean           // 全日予定フラグ（公休・有休など）
   memo: string
-  groupLeaderId: string
-  groupLeaderName: string     // JOIN で取得した表示用名称
+  groupLeaderId: string       // G長・主任の担当ID（リーダー担当の予定では ''）
+  groupLeaderName: string     // 表示用の担当者名（G長・主任、なければリーダーの名前）
+  staffMemberId: string | null     // リーダー担当の予定のみ（当面MTのみ）。G長・主任の予定では null
+  staffMemberColor: string | null  // リーダー担当の予定の表示色（JOINで取得）
   createdAt: string
   updatedAt: string
 }
@@ -66,6 +68,8 @@ export type CreateEventInput = {
   isAllDay: boolean
   memo: string
   groupLeaderId: string
+  // リーダー担当にする場合のみ指定（当面MTのみ）。指定時は group_manager_id を NULL にする
+  staffMemberId?: string | null
 }
 
 export type UpdateEventInput = Partial<CreateEventInput>
@@ -281,12 +285,27 @@ export interface Meeting {
   scheduleIsAllDay: boolean | null // schedules.is_all_day（日程確定済みの場合のみ）
   scheduleGroupManagerId: string | null   // 日程確定済みの場合の担当G長ID
   scheduleGroupManagerName: string | null // 日程確定済みの場合の担当G長名（表示用）
+  scheduleAssignee: MeetingAssignee | null // 日程確定済みの場合の担当者（G長・主任 or リーダー）
   status: MeetingStatus
   executedDate: string | null
   minutesCount: number       // meeting_minutes の件数（表示ステータス導出用）
   memo: string
   createdAt: string
   updatedAt: string
+}
+
+// MTの担当者。G長・主任（group_managers）とリーダー（staff_members）を
+// 画面上は同じ「担当者」として扱い、内部では type で区別する
+export type MeetingAssigneeType = 'group_manager' | 'staff_member'
+
+export type MeetingAssigneeRef = {
+  type: MeetingAssigneeType
+  id: string
+}
+
+export type MeetingAssignee = MeetingAssigneeRef & {
+  name: string
+  color: string
 }
 
 // 手動追加（frequency_id は常に null）
@@ -304,7 +323,7 @@ export type CreateManualMeetingScheduleInput = {
   startTime: string
   endTime: string
   isAllDay: boolean
-  groupManagerId?: string
+  assignee?: MeetingAssigneeRef
 }
 
 // 手動追加フォームの入力全体。schedule未指定 = 日付未定のままmeetingだけ登録する
@@ -359,7 +378,7 @@ export type ConfirmMeetingScheduleInput = {
   startTime?: string   // 未指定時 '10:00'
   endTime?: string     // 未指定時 '11:00'
   isAllDay?: boolean   // 未指定時 false
-  groupManagerId?: string  // 施設に有効なG長が複数いる場合は指定必須
+  assignee?: MeetingAssigneeRef  // 施設の担当者候補が複数いる場合は指定必須
   memo?: string
 }
 
@@ -369,5 +388,5 @@ export type RescheduleMeetingInput = {
   startTime?: string
   endTime?: string
   isAllDay?: boolean
-  groupManagerId?: string
+  assignee?: MeetingAssigneeRef  // 担当者を変更する場合のみ指定
 }

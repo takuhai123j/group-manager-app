@@ -8,10 +8,11 @@ import {
 import { cn, generateTimeSlots } from '@/lib/utils'
 import { parseTargetMonth, getMeetingCellStatus, MEETING_CELL_STATUS_LABELS } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
+import { assigneeKey, parseAssigneeKey } from '@/lib/meetingAssignee'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
 import { validatePdfFile } from '@/services/meetingMinutesStorageService'
 import type {
-  Meeting, MeetingType, GroupManager, MeetingMinute,
+  Meeting, MeetingType, MeetingAssignee, MeetingMinute,
   ConfirmMeetingScheduleInput, RescheduleMeetingInput, CreateManualMeetingScheduleInput,
 } from '@/lib/types'
 
@@ -21,7 +22,7 @@ interface MeetingCellModalProps {
   facilityName: string
   meetingType: MeetingType
   targetMonth: string
-  candidateManagers: GroupManager[]  // 当該施設に紐づく有効なG長
+  candidateAssignees: MeetingAssignee[]  // 当該施設の有効な担当者候補（G長・主任 → リーダーの順）
   onClose: () => void
   onAddManual: (input: { memo: string; schedule?: CreateManualMeetingScheduleInput }) => Promise<void>
   onConfirmSchedule: (input: ConfirmMeetingScheduleInput) => Promise<void>
@@ -72,7 +73,7 @@ function formatFullDateLabel(dateStr: string): string {
 
 export function MeetingCellModal({
   isOpen, meeting, facilityName, meetingType, targetMonth,
-  candidateManagers,
+  candidateAssignees,
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onUploadMinute, onDeleteMinute,
   onMoveTargetMonth, onMoveTargetMonthCascade, onDeleteMeeting,
@@ -87,7 +88,8 @@ export function MeetingCellModal({
   const [isAllDay, setIsAllDay] = useState(false)
   const [startTime, setStartTime] = useState(DEFAULT_START_TIME)
   const [endTime, setEndTime] = useState(DEFAULT_END_TIME)
-  const [groupManagerId, setGroupManagerId] = useState('')
+  // 選択中の担当者。G長・主任とリーダーを区別するため "type:id" のキーで持つ（'' = 未選択 / 変更しない）
+  const [selectedAssigneeKey, setSelectedAssigneeKey] = useState('')
   const [executedDate, setExecutedDate] = useState('')
   const [moveMonth, setMoveMonth] = useState('')
   const [moveCascade, setMoveCascade] = useState(false)
@@ -113,12 +115,12 @@ export function MeetingCellModal({
       setIsAllDay(allDay)
       setStartTime(!allDay && meeting.scheduleStartTime ? toTimeValue(meeting.scheduleStartTime) : DEFAULT_START_TIME)
       setEndTime(!allDay && meeting.scheduleEndTime ? toTimeValue(meeting.scheduleEndTime) : DEFAULT_END_TIME)
-      setGroupManagerId(meeting.scheduleGroupManagerId ?? '')
+      setSelectedAssigneeKey(meeting.scheduleAssignee ? assigneeKey(meeting.scheduleAssignee) : '')
     } else {
       setIsAllDay(false)
       setStartTime(DEFAULT_START_TIME)
       setEndTime(DEFAULT_END_TIME)
-      setGroupManagerId(candidateManagers.length === 1 ? candidateManagers[0].id : '')
+      setSelectedAssigneeKey(candidateAssignees.length === 1 ? assigneeKey(candidateAssignees[0]) : '')
     }
     // 実施日は「今日」を勝手に初期値にしない。
     // schedule_idがあり予定日が取得できる場合のみ、その予定日を初期値にする
@@ -126,7 +128,7 @@ export function MeetingCellModal({
     setMoveMonth(meeting ? meeting.targetMonth.slice(0, 7) : '')
     setMoveCascade(false)
     setMinutesError('')
-  }, [isOpen, meeting, candidateManagers])
+  }, [isOpen, meeting, candidateAssignees])
 
   useEffect(() => {
     if (!isOpen || !meeting || meeting.status !== 'done') { setMinutes([]); return }
@@ -143,15 +145,35 @@ export function MeetingCellModal({
 
   if (!isOpen) return null
 
-  const needsManagerChoice = candidateManagers.length !== 1
-  const managerLabel = candidateManagers.length === 1
-    ? candidateManagers[0].name
-    : candidateManagers.length === 0
-      ? 'この施設に有効なG長が割り当てられていません'
+  // 担当者候補（G長・主任 + リーダー）が合計1名なら自動選択、それ以外は選択必須
+  const needsManagerChoice = candidateAssignees.length !== 1
+  const managerLabel = candidateAssignees.length === 1
+    ? candidateAssignees[0].name
+    : candidateAssignees.length === 0
+      ? 'この施設に有効な担当者が割り当てられていません'
       : undefined
+  const selectedAssignee = parseAssigneeKey(selectedAssigneeKey) ?? undefined
+  const currentAssigneeOutsideCandidates = !!meeting?.scheduleAssignee &&
+    !candidateAssignees.some(a => a.type === meeting.scheduleAssignee?.type && a.id === meeting.scheduleAssignee?.id)
+
+  // 担当者の選択肢。G長・主任とリーダーが両方いる場合はグループ分けして表示する
+  const renderAssigneeOptions = (list: MeetingAssignee[]) => {
+    const managers = list.filter(a => a.type === 'group_manager')
+    const leaders = list.filter(a => a.type === 'staff_member')
+    const toOption = (a: MeetingAssignee) => (
+      <option key={assigneeKey(a)} value={assigneeKey(a)}>{a.name}</option>
+    )
+    if (managers.length === 0 || leaders.length === 0) return list.map(toOption)
+    return (
+      <>
+        <optgroup label="G長・主任">{managers.map(toOption)}</optgroup>
+        <optgroup label="リーダー">{leaders.map(toOption)}</optgroup>
+      </>
+    )
+  }
 
   // 'schedule'モードに入った時点でschedule_idが未設定だったかどうか
-  // （confirmSchedule / rescheduleMeeting の出し分けと、担当G長の必須/任意の判定に使う）
+  // （confirmSchedule / rescheduleMeeting の出し分けと、担当者の必須/任意の判定に使う）
   const wasUnscheduled = !meeting?.scheduleId
 
   const runAction = async (fn: () => Promise<void>) => {
@@ -176,10 +198,10 @@ export function MeetingCellModal({
       return
     }
     if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    if (needsManagerChoice && !groupManagerId) { setError('担当者を選択してください'); return }
+    if (needsManagerChoice && !selectedAssignee) { setError('担当者を選択してください'); return }
     runAction(() => onAddManual({
       memo: addMemo.trim(),
-      schedule: { date, startTime, endTime, isAllDay, groupManagerId: groupManagerId || undefined },
+      schedule: { date, startTime, endTime, isAllDay, assignee: selectedAssignee },
     }))
   }
 
@@ -190,17 +212,17 @@ export function MeetingCellModal({
     if (!meeting) return
     if (!date) { setError('実施予定日を入力してください'); return }
     if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    if (wasUnscheduled && needsManagerChoice && !groupManagerId) { setError('担当者を選択してください'); return }
+    if (wasUnscheduled && needsManagerChoice && !selectedAssignee) { setError('担当者を選択してください'); return }
 
-    // 日程変更時の担当G長は、現在の担当から変更された場合のみ送る
-    // （未変更なら既存scheduleの担当をそのまま維持する）
-    const changedManagerId =
-      groupManagerId && groupManagerId !== meeting.scheduleGroupManagerId ? groupManagerId : undefined
+    // 日程変更時の担当者は、現在の担当から変更された場合のみ送る
+    // （未変更なら既存scheduleの担当をそのまま維持する。種別（G長・主任/リーダー）も含めて比較）
+    const currentKey = meeting.scheduleAssignee ? assigneeKey(meeting.scheduleAssignee) : ''
+    const changedAssignee = selectedAssignee && selectedAssigneeKey !== currentKey ? selectedAssignee : undefined
 
     runAction(() =>
       wasUnscheduled
-        ? onConfirmSchedule({ date, startTime, endTime, isAllDay, groupManagerId: groupManagerId || undefined })
-        : onReschedule({ date, startTime, endTime, isAllDay, groupManagerId: changedManagerId })
+        ? onConfirmSchedule({ date, startTime, endTime, isAllDay, assignee: selectedAssignee })
+        : onReschedule({ date, startTime, endTime, isAllDay, assignee: changedAssignee })
     )
   }
 
@@ -362,20 +384,18 @@ export function MeetingCellModal({
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       担当者 {needsManagerChoice && <span className="text-red-500">*</span>}
                     </label>
-                    {candidateManagers.length <= 1 ? (
+                    {candidateAssignees.length <= 1 ? (
                       <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                         {managerLabel}
                       </p>
                     ) : (
                       <select
-                        value={groupManagerId}
-                        onChange={e => setGroupManagerId(e.target.value)}
+                        value={selectedAssigneeKey}
+                        onChange={e => setSelectedAssigneeKey(e.target.value)}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">選択してください</option>
-                        {candidateManagers.map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
+                        {renderAssigneeOptions(candidateAssignees)}
                       </select>
                     )}
                   </div>
@@ -560,39 +580,34 @@ export function MeetingCellModal({
                   担当者 {wasUnscheduled && needsManagerChoice && <span className="text-red-500">*</span>}
                 </label>
                 {wasUnscheduled ? (
-                  candidateManagers.length <= 1 ? (
+                  candidateAssignees.length <= 1 ? (
                     <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                       {managerLabel}
                     </p>
                   ) : (
                     <select
-                      value={groupManagerId}
-                      onChange={e => setGroupManagerId(e.target.value)}
+                      value={selectedAssigneeKey}
+                      onChange={e => setSelectedAssigneeKey(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">選択してください</option>
-                      {candidateManagers.map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
+                      {renderAssigneeOptions(candidateAssignees)}
                     </select>
                   )
                 ) : (
                   <select
-                    value={groupManagerId}
-                    onChange={e => setGroupManagerId(e.target.value)}
+                    value={selectedAssigneeKey}
+                    onChange={e => setSelectedAssigneeKey(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">変更しない</option>
-                    {/* 現在の担当G長が候補外（施設の担当変更・無効化など）でも現在値として表示する */}
-                    {meeting?.scheduleGroupManagerId &&
-                      !candidateManagers.some(m => m.id === meeting.scheduleGroupManagerId) && (
-                        <option value={meeting.scheduleGroupManagerId}>
-                          {meeting.scheduleGroupManagerName ?? '現在の担当'}（現在）
-                        </option>
-                      )}
-                    {candidateManagers.map(m => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
+                    {/* 現在の担当者が候補外（施設の担当変更・無効化など）でも現在値として表示する */}
+                    {currentAssigneeOutsideCandidates && meeting?.scheduleAssignee && (
+                      <option value={assigneeKey(meeting.scheduleAssignee)}>
+                        {meeting.scheduleAssignee.name || '現在の担当'}（現在）
+                      </option>
+                    )}
+                    {renderAssigneeOptions(candidateAssignees)}
                   </select>
                 )}
               </div>

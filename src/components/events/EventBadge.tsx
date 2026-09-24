@@ -51,7 +51,7 @@ export function EventBadge({
   )
 
   if (colorMode === 'leader') {
-    const style = getManagerColorStyle(manager?.color ?? '#6B7280')
+    const style = getManagerColorStyle(manager?.color ?? event.staffMemberColor ?? '#6B7280')
     return (
       <button
         onClick={onClick}

@@ -1,57 +1,53 @@
 import { createClient } from '@/lib/supabase/client'
 import { scheduleService } from '@/services/scheduleService'
 import { meetingService } from '@/services/meetingService'
+import { meetingAssigneeService } from '@/services/meetingAssigneeService'
+import { isSameAssignee } from '@/lib/meetingAssignee'
 import { buildMeetingScheduleTitle } from '@/constants/eventTypes'
 import type {
   Meeting, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
-  CreateManualMeetingWithScheduleInput,
+  CreateManualMeetingWithScheduleInput, MeetingAssigneeRef,
 } from '@/lib/types'
 
 // meetings と schedules の連携（日程確定・変更・取消）のみを扱う。
 // meetings.target_month は「予定月」を表すだけで、具体的な日付の正は
 // 常に schedules.date とする（このファイルでは target_month を一切書き換えない）。
 
-type GroupManagerLink = {
-  group_manager_id: string
-  group_managers: { id: string; name: string; active: boolean } | null
-}
-
-// facility_id に紐づく「有効な」G長を group_manager_facilities から解決する。
-//   - explicitGroupManagerId 指定あり → その施設に紐づく有効なG長か検証してから使用
-//   - 指定なし かつ 有効なG長が1名のみ → 自動的に採用
+// facility_id の担当者候補（G長・主任 + リーダー）から、このMTの担当者を決定する。
+//   - explicit 指定あり → その施設の有効な候補か検証してから使用
+//   - 指定なし かつ 候補が1名のみ（G長・主任とリーダーの合計） → 自動的に採用
 //   - 指定なし かつ 0名・複数名 → 安全に決定できないためエラー
-async function resolveResponsibleGroupManagerId(
+async function resolveAssignee(
   facilityId: string,
-  explicitGroupManagerId?: string
-): Promise<string> {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from('group_manager_facilities')
-    .select('group_manager_id, group_managers ( id, name, active )')
-    .eq('facility_id', facilityId)
-  if (error) throw error
+  explicit?: MeetingAssigneeRef
+): Promise<MeetingAssigneeRef> {
+  const candidates = await meetingAssigneeService.getCandidates(facilityId)
 
-  const candidates = ((data ?? []) as unknown as GroupManagerLink[])
-    .map(link => link.group_managers)
-    .filter((g): g is { id: string; name: string; active: boolean } => g !== null && g.active)
-
-  if (explicitGroupManagerId) {
-    const isValid = candidates.some(c => c.id === explicitGroupManagerId)
-    if (!isValid) {
+  if (explicit) {
+    if (!candidates.some(c => isSameAssignee(c, explicit))) {
       throw new Error('指定された担当者はこの施設に割り当てられていないか、無効化されています')
     }
-    return explicitGroupManagerId
+    return { type: explicit.type, id: explicit.id }
   }
 
-  if (candidates.length === 1) return candidates[0].id
+  if (candidates.length === 1) return { type: candidates[0].type, id: candidates[0].id }
   if (candidates.length === 0) {
-    throw new Error('この施設に有効なG長が割り当てられていません。担当者を指定してください')
+    throw new Error('この施設に有効な担当者が割り当てられていません。担当者を指定してください')
   }
-  throw new Error('この施設には複数の有効なG長が割り当てられています。担当者を指定してください')
+  throw new Error('この施設には複数の担当者が割り当てられています。担当者を指定してください')
+}
+
+// 担当者を scheduleService の入力に変換する。
+// G長・主任 → group_manager_id、リーダー → staff_member_id（scheduleService側で
+// 必ず両方の列を1回のINSERT/UPDATEで設定し、もう一方は NULL にする）
+function toScheduleAssigneeInput(assignee: MeetingAssigneeRef): { groupLeaderId: string; staffMemberId: string | null } {
+  return assignee.type === 'staff_member'
+    ? { groupLeaderId: '', staffMemberId: assignee.id }
+    : { groupLeaderId: assignee.id, staffMemberId: null }
 }
 
 export const meetingScheduleService = {
-  resolveResponsibleGroupManagerId,
+  resolveAssignee,
 
   // 日程確定: schedules に新規作成し、meetings.schedule_id に紐付ける
   // meeting.schedule_id が既に存在する場合は二重作成を防ぐため必ずエラーにする
@@ -62,7 +58,7 @@ export const meetingScheduleService = {
       throw new Error('このMTは既に日程が確定しています。日程変更は rescheduleMeeting を使用してください')
     }
 
-    const groupManagerId = await resolveResponsibleGroupManagerId(meeting.facilityId, input.groupManagerId)
+    const assignee = await resolveAssignee(meeting.facilityId, input.assignee)
     const isAllDay = input.isAllDay ?? false
     const title = buildMeetingScheduleTitle(meeting.meetingType, meeting.facilityName)
 
@@ -75,7 +71,7 @@ export const meetingScheduleService = {
       type: 'mt',
       isAllDay,
       memo: input.memo ?? '',
-      groupLeaderId: groupManagerId,
+      ...toScheduleAssigneeInput(assignee),
     })
 
     try {
@@ -97,8 +93,9 @@ export const meetingScheduleService = {
       throw new Error('このMTはまだ日程が確定していません。confirmSchedule を使用してください')
     }
 
-    const groupManagerId = input.groupManagerId !== undefined
-      ? await resolveResponsibleGroupManagerId(meeting.facilityId, input.groupManagerId)
+    // 担当者は変更指定があった場合のみ検証して差し替える（未指定なら既存の担当者を維持）
+    const assignee = input.assignee
+      ? await resolveAssignee(meeting.facilityId, input.assignee)
       : undefined
 
     await scheduleService.update(meeting.scheduleId, {
@@ -106,7 +103,7 @@ export const meetingScheduleService = {
       startTime: input.startTime,
       endTime: input.endTime,
       isAllDay: input.isAllDay,
-      groupLeaderId: groupManagerId,
+      ...(assignee ? toScheduleAssigneeInput(assignee) : {}),
     })
 
     // schedule_id 自体は変わらないため meetings 側の更新は不要。最新状態を返す。
@@ -153,7 +150,7 @@ export const meetingScheduleService = {
         startTime: input.schedule.startTime,
         endTime: input.schedule.endTime,
         isAllDay: input.schedule.isAllDay,
-        groupManagerId: input.schedule.groupManagerId,
+        assignee: input.schedule.assignee,
       })
     } catch (err) {
       await meetingService.deleteIfSafe(created.id).catch(() => {

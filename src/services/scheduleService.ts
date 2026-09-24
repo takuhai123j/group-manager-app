@@ -6,6 +6,7 @@ import type { ScheduleEvent, CreateEventInput, UpdateEventInput, EventType } fro
 const SELECT_WITH_JOINS = `
   id,
   group_manager_id,
+  staff_member_id,
   facility_id,
   title,
   date,
@@ -17,13 +18,26 @@ const SELECT_WITH_JOINS = `
   created_at,
   updated_at,
   group_managers ( name ),
+  staff_members ( name, color ),
   facilities ( name )
 ` as const
+
+// 担当者の列を「G長・主任」か「スタッフ（リーダー）」のどちらか一方だけにする値を作る。
+// DB側の CHECK (num_nonnulls(group_manager_id, staff_member_id) = 1) を満たすため、
+// 担当者を設定・変更するときは必ず両方の列をこの値で1回のINSERT/UPDATEに含める
+// （古い担当者IDが残らないようにする）
+type AssigneeColumns = { group_manager_id: string | null; staff_member_id: string | null }
+function toAssigneeColumns(groupLeaderId: string, staffMemberId?: string | null): AssigneeColumns {
+  return staffMemberId
+    ? { group_manager_id: null, staff_member_id: staffMemberId }
+    : { group_manager_id: groupLeaderId, staff_member_id: null }
+}
 
 // Supabase の JOIN レスポンス型
 type ScheduleRow = {
   id: string
-  group_manager_id: string
+  group_manager_id: string | null
+  staff_member_id: string | null
   facility_id: string | null
   title: string
   date: string
@@ -35,6 +49,7 @@ type ScheduleRow = {
   created_at: string
   updated_at: string
   group_managers: { name: string } | null
+  staff_members: { name: string; color: string } | null
   facilities: { name: string } | null
 }
 
@@ -51,7 +66,10 @@ function toScheduleEvent(row: ScheduleRow): ScheduleEvent {
     isAllDay: row.is_all_day ?? false,
     memo: row.memo ?? '',
     groupLeaderId: row.group_manager_id ?? '',
-    groupLeaderName: row.group_managers?.name ?? '',
+    // 表示用の担当者名：G長・主任の予定はG長名、リーダー担当の予定はリーダー名
+    groupLeaderName: row.group_managers?.name ?? row.staff_members?.name ?? '',
+    staffMemberId: row.staff_member_id ?? null,
+    staffMemberColor: row.staff_members?.color ?? null,
     createdAt: row.created_at ?? '',
     updatedAt: row.updated_at ?? '',
   }
@@ -74,7 +92,7 @@ export const scheduleService = {
     const { data, error } = await supabase
       .from('schedules')
       .insert({
-        group_manager_id: input.groupLeaderId,
+        ...toAssigneeColumns(input.groupLeaderId, input.staffMemberId),
         facility_id: input.isAllDay ? null : input.facilityId,
         title: input.title,
         date: input.date,
@@ -102,7 +120,13 @@ export const scheduleService = {
     if (input.type !== undefined)         patch.type             = input.type
     if (input.isAllDay !== undefined)     patch.is_all_day       = input.isAllDay
     if (input.memo !== undefined)         patch.memo             = input.memo
-    if (input.groupLeaderId !== undefined) patch.group_manager_id = input.groupLeaderId
+    // 担当者の変更は、G長・主任かリーダーのIDが明示的に渡された場合のみ。
+    // 両方の列を同じUPDATEで設定し直す（空文字だけが渡された場合は担当者に触れない）
+    if (input.staffMemberId) {
+      Object.assign(patch, toAssigneeColumns('', input.staffMemberId))
+    } else if (input.groupLeaderId) {
+      Object.assign(patch, toAssigneeColumns(input.groupLeaderId, null))
+    }
 
     const { data, error } = await supabase
       .from('schedules')

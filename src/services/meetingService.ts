@@ -1,15 +1,14 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/database'
 import type {
-  Meeting, MeetingType, CreateManualMeetingInput, UpdateMeetingInput,
+  Meeting, MeetingAssignee, MeetingType, CreateManualMeetingInput, UpdateMeetingInput,
 } from '@/lib/types'
 import { parseTargetMonth, buildTargetMonth } from '@/lib/meetingPlan'
 
 // JOIN を含む SELECT フィールド定義
 // meeting_minutes(count) は行を取得せず件数のみ取得する PostgREST の集計構文
-// schedules(date, start_time, end_time, is_all_day, group_manager_id, group_managers(name)) は
-// 日程確定済みの場合の実施予定日・時間・担当G長を年間計画UI/ダッシュボードに表示し、
-// 「予定を保存」フォームの初期値に使うためのJOIN
+// schedules(...) は日程確定済みの場合の実施予定日・時間・担当者（G長・主任 or リーダー）を
+// 年間計画UI/ダッシュボードに表示し、「予定を保存」フォームの初期値に使うためのJOIN
 const SELECT_WITH_JOINS = `
   id,
   facility_id,
@@ -24,7 +23,11 @@ const SELECT_WITH_JOINS = `
   updated_at,
   facilities ( name ),
   meeting_minutes ( count ),
-  schedules ( date, start_time, end_time, is_all_day, group_manager_id, group_managers ( name ) )
+  schedules (
+    date, start_time, end_time, is_all_day,
+    group_manager_id, group_managers ( name, color ),
+    staff_member_id, staff_members ( name, color )
+  )
 ` as const
 
 type MeetingRow = {
@@ -46,9 +49,33 @@ type MeetingRow = {
     start_time: string
     end_time: string
     is_all_day: boolean
-    group_manager_id: string
-    group_managers: { name: string } | null
+    group_manager_id: string | null
+    group_managers: { name: string; color: string } | null
+    staff_member_id: string | null
+    staff_members: { name: string; color: string } | null
   } | null
+}
+
+// schedules の担当者列（どちらか一方だけが設定される）から共通の担当者を組み立てる
+function toScheduleAssignee(schedule: MeetingRow['schedules']): MeetingAssignee | null {
+  if (!schedule) return null
+  if (schedule.staff_member_id) {
+    return {
+      type: 'staff_member',
+      id: schedule.staff_member_id,
+      name: schedule.staff_members?.name ?? '',
+      color: schedule.staff_members?.color ?? '#6B7280',
+    }
+  }
+  if (schedule.group_manager_id) {
+    return {
+      type: 'group_manager',
+      id: schedule.group_manager_id,
+      name: schedule.group_managers?.name ?? '',
+      color: schedule.group_managers?.color ?? '#6B7280',
+    }
+  }
+  return null
 }
 
 function toMeeting(row: MeetingRow): Meeting {
@@ -66,6 +93,7 @@ function toMeeting(row: MeetingRow): Meeting {
     scheduleIsAllDay: row.schedules?.is_all_day ?? null,
     scheduleGroupManagerId: row.schedules?.group_manager_id ?? null,
     scheduleGroupManagerName: row.schedules?.group_managers?.name ?? null,
+    scheduleAssignee: toScheduleAssignee(row.schedules),
     status: row.status,
     executedDate: row.executed_date,
     minutesCount: row.meeting_minutes?.[0]?.count ?? 0,

@@ -156,6 +156,7 @@ export default function HomePage() {
   const {
     meetings, frequencies: meetingFrequencies,
     loading: meetingPlanLoading, error: meetingPlanError,
+    reload: reloadMeetingPlan,
     addManual: addMeetingManual,
     confirmSchedule: confirmMeetingSchedule,
     rescheduleMeeting,
@@ -301,30 +302,34 @@ export default function HomePage() {
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
 
-  const filteredEvents = useMemo(() => events.filter(event => {
-    let personMatch: boolean
-    if (selectedRole === 'all') {
-      personMatch = true
-    } else if (selectedRole === 'group_manager') {
-      personMatch = selectedPersonId === ALL_PERSON_ID || event.groupLeaderId === selectedPersonId
-    } else {
-      // leader / rounder / field_employee: 予定データ未連携のため非表示
-      personMatch = false
+  // 職種タブ・人の絞り込み。
+  //   G長タブ    : G長・主任担当の予定のみ（リーダー担当のMTは含めない）
+  //   リーダータブ: リーダー担当の予定（当面MTのみ）を staff_member_id で照合
+  //   ラウンダー・現場社員: 予定データ未連携のため非表示
+  const matchesPerson = useCallback((event: ScheduleEvent): boolean => {
+    if (selectedRole === 'all') return true
+    if (selectedRole === 'group_manager') {
+      if (!event.groupLeaderId) return false
+      return selectedPersonId === ALL_PERSON_ID || event.groupLeaderId === selectedPersonId
     }
+    if (selectedRole === 'leader') {
+      if (!event.staffMemberId) return false
+      return selectedPersonId === ALL_PERSON_ID || event.staffMemberId === selectedPersonId
+    }
+    return false
+  }, [selectedRole, selectedPersonId])
+
+  const filteredEvents = useMemo(() => events.filter(event => {
+    const personMatch = matchesPerson(event)
     const typeMatch = filters.types.length === 0 || filters.types.includes(event.type)
     const facilityMatch = filters.facilities.length === 0 || filters.facilities.includes(event.facilityName)
     return personMatch && typeMatch && facilityMatch
-  }), [events, selectedRole, selectedPersonId, filters])
+  }), [events, matchesPerson, filters])
 
-  const leaderBaseCount = useMemo(() => {
-    if (selectedRole === 'all') return events.length
-    if (selectedRole === 'group_manager') {
-      return events.filter(e =>
-        selectedPersonId === ALL_PERSON_ID || e.groupLeaderId === selectedPersonId
-      ).length
-    }
-    return 0
-  }, [events, selectedRole, selectedPersonId])
+  const leaderBaseCount = useMemo(
+    () => events.filter(matchesPerson).length,
+    [events, matchesPerson]
+  )
 
   // ── モーダルヘルパー ─────────────────────────────────────────────
   const openAdd = useCallback((date?: Date) => {
@@ -345,18 +350,23 @@ export default function HomePage() {
     setModalDate(undefined)
   }, [])
 
+  // カレンダー側でMTの予定を更新・削除した場合は、MT年間計画側（meetings のJOIN結果）も
+  // 読み直す（古い日付・時間・担当者のまま「予定を保存」フォームに表示されないように）
   const handleSave = useCallback(async (input: CreateEventInput) => {
     if (editingEvent) await updateEvent(editingEvent.id, input)
     else await addEvent(input)
-  }, [editingEvent, addEvent, updateEvent])
+    if (editingEvent?.type === 'mt' || input.type === 'mt') await reloadMeetingPlan()
+  }, [editingEvent, addEvent, updateEvent, reloadMeetingPlan])
 
   const handleSaveBulk = useCallback(async (inputs: CreateEventInput[]) => {
     await addEvents(inputs)
   }, [addEvents])
 
   const handleDelete = useCallback(async (id: string) => {
+    const wasMt = events.find(e => e.id === id)?.type === 'mt'
     await deleteEvent(id)
-  }, [deleteEvent])
+    if (wasMt) await reloadMeetingPlan()
+  }, [events, deleteEvent, reloadMeetingPlan])
 
   const handleDayClick = useCallback((date: Date) => {
     setDate(date); changeView('day')
@@ -593,6 +603,8 @@ export default function HomePage() {
         facilities={facilities}
         activeManagers={activeManagers}
         managerFacilities={managerFacilities}
+        activeLeaders={activeLeaders}
+        leaderFacilities={leaderFacilities}
         meetings={meetings}
         frequencies={meetingFrequencies}
         loading={meetingPlanLoading}

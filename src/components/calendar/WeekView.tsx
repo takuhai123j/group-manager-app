@@ -108,7 +108,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
                       const typeConfig = getEventTypeConfig(event.type)
                       const manager = managers.find(m => m.id === event.groupLeaderId)
                       const cardStyle = colorMode === 'leader'
-                        ? { ...getManagerColorStyle(manager?.color ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
+                        ? { ...getManagerColorStyle(manager?.color ?? event.staffMemberColor ?? '#6B7280'), borderWidth: 1, borderStyle: 'solid' as const }
                         : undefined
                       const cardClass = colorMode === 'type'
                         ? cn(typeConfig.bgColor, typeConfig.textColor, typeConfig.borderColor, 'border')
@@ -178,7 +178,7 @@ export function WeekView({ currentDate, events, managers, managerFacilities, col
 
                     const cardStyle = colorMode === 'leader'
                       ? {
-                          ...getManagerColorStyle(manager?.color ?? '#6B7280'),
+                          ...getManagerColorStyle(manager?.color ?? event.staffMemberColor ?? '#6B7280'),
                           borderWidth: 1,
                           borderStyle: 'solid' as const,
                         }

@@ -110,6 +110,9 @@ export function EventModal({
   const isHalfDay = isHalfDayType(form.type)
   // 担当欄の表示名。MTは「担当者」、それ以外は従来どおり「担当G長」（内部は groupLeaderId のまま）
   const assigneeLabel = form.type === 'mt' ? '担当者' : '担当G長'
+  // リーダー担当のMT（schedules.staff_member_id あり）。担当者はMT年間計画からのみ変更でき、
+  // ここでは担当者を固定表示・種別をMTに固定する（担当者の列は保存時に一切変更しない）
+  const isStaffAssigned = !!editingEvent?.staffMemberId
   const showBulkMode = isAllDay && !editingEvent
 
   useEffect(() => {
@@ -146,7 +149,7 @@ export function EventModal({
       if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
     }
     if (isHalfDay && !form.startTime) e.startTime = '開始時間を選択してください'
-    if (!form.groupLeaderId) e.groupLeaderId = `${assigneeLabel}を選択してください`
+    if (!isStaffAssigned && !form.groupLeaderId) e.groupLeaderId = `${assigneeLabel}を選択してください`
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -211,7 +214,8 @@ export function EventModal({
         type: form.type,
         isAllDay,
         memo: form.memo.trim(),
-        groupLeaderId: form.groupLeaderId,
+        // リーダー担当のMTは担当者を変更しない（空文字は scheduleService.update 側で無視される）
+        groupLeaderId: isStaffAssigned ? '' : form.groupLeaderId,
       })
       onClose()
     } finally {
@@ -396,7 +400,16 @@ export function EventModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {assigneeLabel} <span className="text-red-500">*</span>
             </label>
-            {selectableManagers.length === 0 ? (
+            {isStaffAssigned ? (
+              <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle"
+                  style={{ backgroundColor: editingEvent?.staffMemberColor ?? '#6B7280' }}
+                />
+                {editingEvent?.groupLeaderName || 'リーダー'}
+                <span className="block text-xs text-gray-400 mt-0.5">担当者の変更はMT年間計画から行ってください</span>
+              </p>
+            ) : selectableManagers.length === 0 ? (
               <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 有効なG長がいません。G長・主任マスタ管理から追加してください。
               </p>
@@ -457,8 +470,10 @@ export function EventModal({
                   key={t.value}
                   type="button"
                   onClick={() => handleTypeChange(t.value)}
+                  // リーダー担当の予定は当面MTのみ（DBの CHECK でも保証）。種別変更はできない
+                  disabled={isStaffAssigned && t.value !== 'mt'}
                   className={cn(
-                    'px-3 py-2 text-sm rounded-lg border transition-colors text-left',
+                    'px-3 py-2 text-sm rounded-lg border transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed',
                     form.type === t.value
                       ? cn(t.bgColor, t.textColor, t.borderColor, 'font-semibold')
                       : 'border-gray-200 text-gray-600 hover:bg-gray-50'

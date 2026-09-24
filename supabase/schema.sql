@@ -263,6 +263,32 @@ CREATE POLICY "anon_all_staff_member_facilities" ON staff_member_facilities
   FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
 
 -- -------------------------------------------------------
+-- schedules の担当者拡張（MT担当者としてリーダーを登録可能にする）
+--   G長・主任の予定 : group_manager_id = UUID, staff_member_id = NULL
+--   リーダーの予定   : group_manager_id = NULL, staff_member_id = UUID（当面MTのみ）
+-- staff_members より後に定義する必要があるため、schedules 本体とは別にここで ALTER する。
+-- -------------------------------------------------------
+ALTER TABLE schedules
+  ADD COLUMN IF NOT EXISTS staff_member_id UUID NULL;
+
+ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_staff_member_id_fkey;
+ALTER TABLE schedules ADD CONSTRAINT schedules_staff_member_id_fkey
+  FOREIGN KEY (staff_member_id) REFERENCES staff_members(id) ON DELETE RESTRICT;
+
+CREATE INDEX IF NOT EXISTS idx_schedules_staff_member_id
+  ON schedules(staff_member_id);
+
+ALTER TABLE schedules ALTER COLUMN group_manager_id DROP NOT NULL;
+
+ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_assignee_exactly_one;
+ALTER TABLE schedules ADD CONSTRAINT schedules_assignee_exactly_one
+  CHECK (num_nonnulls(group_manager_id, staff_member_id) = 1);
+
+ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_staff_assignee_mt_only;
+ALTER TABLE schedules ADD CONSTRAINT schedules_staff_assignee_mt_only
+  CHECK (staff_member_id IS NULL OR type = 'mt');
+
+-- -------------------------------------------------------
 -- Meeting Frequencies（施設ごとのMT頻度設定）
 -- meeting_type: 'facility'（施設MT） | 'kitchen'（厨房MT）
 -- 施設×MT種別ごとに何ヶ月おきに実施するかを設定する。

@@ -9,8 +9,9 @@ import {
   type MeetingCellStatus,
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
+import { buildAssigneeCandidates } from '@/lib/meetingAssignee'
 import type {
-  Facility, GroupManager, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
+  Facility, GroupManager, StaffMember, MeetingAssignee, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
   MeetingFrequencyInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
   CreateManualMeetingScheduleInput,
 } from '@/lib/types'
@@ -29,6 +30,9 @@ interface MeetingPlanManagerProps {
   facilities: Facility[]
   activeManagers: GroupManager[]
   managerFacilities: Record<string, string[]>
+  // MT担当者候補としてのリーダー（staff_members.role='leader'）と担当施設
+  activeLeaders: StaffMember[]
+  leaderFacilities: Record<string, string[]>
   meetings: Meeting[]
   frequencies: MeetingFrequency[]
   loading: boolean
@@ -85,7 +89,7 @@ interface SelectedCell {
 
 export function MeetingPlanManager({
   isOpen, year, onYearChange,
-  facilities, activeManagers, managerFacilities,
+  facilities, activeManagers, managerFacilities, activeLeaders, leaderFacilities,
   meetings, frequencies, loading, error,
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onSaveFrequency, onToggleFrequencyActive, onUploadMinute, onDeleteMinute,
@@ -132,8 +136,9 @@ export function MeetingPlanManager({
     setSelectedCell({ facility, meetingType: meeting.meetingType, targetMonth: meeting.targetMonth, meeting })
   }
 
-  const candidateManagersFor = (facilityId: string): GroupManager[] =>
-    activeManagers.filter(m => (managerFacilities[m.id] ?? []).includes(facilityId))
+  // 施設のMT担当者候補（G長・主任 + リーダー）
+  const candidateAssigneesFor = (facilityId: string): MeetingAssignee[] =>
+    buildAssigneeCandidates(facilityId, activeManagers, managerFacilities, activeLeaders, leaderFacilities)
 
   return (
     <>
@@ -317,7 +322,7 @@ export function MeetingPlanManager({
         facilityName={selectedCell?.facility.name ?? ''}
         meetingType={selectedCell?.meetingType ?? 'facility'}
         targetMonth={selectedCell?.targetMonth ?? ''}
-        candidateManagers={selectedCell ? candidateManagersFor(selectedCell.facility.id) : []}
+        candidateAssignees={selectedCell ? candidateAssigneesFor(selectedCell.facility.id) : []}
         onClose={() => setSelectedCell(null)}
         onAddManual={async input => {
           if (!selectedCell) return

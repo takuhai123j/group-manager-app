@@ -185,7 +185,7 @@ export function MeetingDashboard({ meetings, facilities, onOpenMeeting }: Meetin
                             {m.scheduleId && m.scheduleDate ? formatShortDate(m.scheduleDate) : '未定'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-500">
-                            {m.scheduleId && m.scheduleGroupManagerName ? m.scheduleGroupManagerName : '未定'}
+                            {m.scheduleId && m.scheduleAssignee?.name ? m.scheduleAssignee.name : '未定'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={cn(
