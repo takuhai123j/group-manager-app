@@ -102,8 +102,10 @@ export function CalendarHeader({
     { label: '施設管理',    icon: <Building2 size={14} />, onClick: () => { onOpenFacilityManager(); closeMenu() } },
   ]
 
-  // スマホ（sm未満）の「⋯」メニュー。PCではヘッダーに並んでいる操作をここへまとめる
+  // スマホ（sm未満）の「⋯」メニュー。PCではヘッダーに並んでいる操作をここへまとめる。
+  // MT年間計画は利用頻度が高いため先頭に置く
   const mobileMenuItems: Array<{ label: string; icon: React.ReactNode; onClick: () => void } | null> = [
+    { label: 'MT年間計画', icon: <CalendarRange size={14} />,     onClick: () => { onOpenMeetingPlan(); closeMenu() } },
     { label: 'シフト変更', icon: <ArrowLeftRight size={14} />,    onClick: () => { onOpenShiftChangeManager(); closeMenu() } },
     { label: 'PDF資料',    icon: <FileText size={14} />,          onClick: () => { onOpenShiftManager(); closeMenu() } },
     { label: '絞り込み',   icon: <SlidersHorizontal size={14} />, onClick: () => { onOpenFilter(); closeMenu() } },
@@ -142,7 +144,7 @@ export function CalendarHeader({
         </button>
       </div>
 
-      {/* Right: PCは各ボタンを並べる。スマホはMT年間計画・表示切替・予定追加・「⋯」メニューのみ */}
+      {/* Right: PCは各ボタンを並べる。スマホは表示切替・予定追加・「⋯」メニューのみ */}
       <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
         {/* シフト変更記録（スマホは「⋯」メニュー内） */}
         <button
@@ -164,10 +166,10 @@ export function CalendarHeader({
           <span className="hidden sm:inline">PDF資料</span>
         </button>
 
-        {/* MT年間計画（スマホでも常時表示する主要機能） */}
+        {/* MT年間計画（スマホは「⋯」メニューの先頭） */}
         <button
           onClick={onOpenMeetingPlan}
-          className="flex items-center gap-1.5 px-1.5 py-1.5 sm:px-3 rounded-lg border border-indigo-200 text-indigo-600 text-sm hover:bg-indigo-50 transition-colors"
+          className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-indigo-200 text-indigo-600 text-sm hover:bg-indigo-50 transition-colors"
           title="MT年間計画"
           aria-label="MT年間計画"
         >
@@ -241,7 +243,7 @@ export function CalendarHeader({
           <HelpButton onClick={onOpenHelp} />
         </div>
 
-        {/* スマホ用「⋯」メニュー：シフト変更 / PDF資料 / 絞り込み / ヘルプ / 管理 */}
+        {/* スマホ用「⋯」メニュー：MT年間計画 / シフト変更 / PDF資料 / 絞り込み / ヘルプ / 管理 */}
         <div className="sm:hidden relative" ref={mobileMenuRef}>
           <button
             onClick={toggleMobileMenu}
