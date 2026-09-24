@@ -29,7 +29,7 @@ interface MeetingCellModalProps {
   onReschedule: (input: RescheduleMeetingInput) => Promise<void>
   onCancelSchedule: () => Promise<void>
   onMarkDone: (executedDate?: string) => Promise<void>
-  onUploadMinute: (meeting: Meeting, file: File) => Promise<MeetingMinute>
+  onUploadMinute: (meeting: Meeting, file: File) => Promise<{ minute: MeetingMinute; notification?: 'sent' | 'skipped' | 'failed' }>
   onDeleteMinute: (minute: MeetingMinute) => Promise<void>
   onMoveTargetMonth: (newTargetMonth: string) => Promise<void>
   onMoveTargetMonthCascade: (newTargetMonth: string) => Promise<void>
@@ -97,6 +97,8 @@ export function MeetingCellModal({
   const [minutes, setMinutes] = useState<MeetingMinute[]>([])
   const [minutesLoading, setMinutesLoading] = useState(false)
   const [minutesError, setMinutesError] = useState('')
+  // 議事録通知メールの結果（アップロード自体は完了している前提）
+  const [minutesNotice, setMinutesNotice] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -128,6 +130,7 @@ export function MeetingCellModal({
     setMoveMonth(meeting ? meeting.targetMonth.slice(0, 7) : '')
     setMoveCascade(false)
     setMinutesError('')
+    setMinutesNotice(null)
   }, [isOpen, meeting, candidateAssignees])
 
   useEffect(() => {
@@ -264,9 +267,15 @@ export function MeetingCellModal({
 
     setUploading(true)
     setMinutesError('')
+    setMinutesNotice(null)
     try {
-      const created = await onUploadMinute(meeting, file)
+      const { minute: created, notification } = await onUploadMinute(meeting, file)
       setMinutes(prev => [created, ...prev])
+      if (notification === 'failed') {
+        setMinutesNotice({ kind: 'warning', message: '議事録の保存は完了しましたが、通知メールの送信に失敗しました' })
+      } else if (notification === 'sent') {
+        setMinutesNotice({ kind: 'success', message: '議事録を保存し、通知メールを送信しました' })
+      }
     } catch (err) {
       setMinutesError(err instanceof Error ? err.message : 'アップロードに失敗しました')
     } finally {
@@ -509,6 +518,11 @@ export function MeetingCellModal({
                   </div>
 
                   {minutesError && <p className="text-xs text-red-500">{minutesError}</p>}
+                  {minutesNotice && (
+                    <p className={cn('text-xs', minutesNotice.kind === 'warning' ? 'text-amber-700' : 'text-emerald-700')}>
+                      {minutesNotice.message}
+                    </p>
+                  )}
 
                   {minutesLoading ? (
                     <div className="flex justify-center py-3">

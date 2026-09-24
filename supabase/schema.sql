@@ -414,6 +414,24 @@ CREATE POLICY "anon_all_meeting_minutes_objects" ON storage.objects
   WITH CHECK (bucket_id = 'meeting-minutes');
 
 -- -------------------------------------------------------
+-- MTメール通知の通知済み管理
+--   meetings.schedule_notified_at      : MT予定確定通知を送信済みの日時（1MTにつき原則1回）
+--   meetings.schedule_notify_claimed_at: 予定確定通知を送信処理中の目印（並行送信の抑止用）
+--   meeting_minutes.notified_at        : 議事録保存通知を送信済みの日時（1ファイルにつき1回）
+--   meeting_minutes.notify_claimed_at  : 議事録通知を送信処理中の目印（並行送信の抑止用）
+-- ※ これら4列の更新は通知API Route（/api/meeting-notify/*）側だけで行い、
+--    クライアントコードからは直接更新しない（Phase 1 のRLSでは技術的には更新可能なため運用ルールとする）。
+-- ※ 導入時に既存データを通知済みにする穴埋めUPDATEは初回migration専用のため、ここには含めない。
+-- -------------------------------------------------------
+ALTER TABLE meetings
+  ADD COLUMN IF NOT EXISTS schedule_notified_at       TIMESTAMPTZ NULL,
+  ADD COLUMN IF NOT EXISTS schedule_notify_claimed_at TIMESTAMPTZ NULL;
+
+ALTER TABLE meeting_minutes
+  ADD COLUMN IF NOT EXISTS notified_at       TIMESTAMPTZ NULL,
+  ADD COLUMN IF NOT EXISTS notify_claimed_at TIMESTAMPTZ NULL;
+
+-- -------------------------------------------------------
 -- Phase 2 移行時の参考SQL（コメントアウト）
 -- -------------------------------------------------------
 -- ALTER TABLE group_managers ADD COLUMN IF NOT EXISTS org_id UUID;

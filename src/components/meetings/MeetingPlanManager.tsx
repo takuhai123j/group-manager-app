@@ -10,6 +10,7 @@ import {
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import { buildAssigneeCandidates } from '@/lib/meetingAssignee'
+import type { MeetingNotifyResult } from '@/services/meetingNotifyService'
 import type {
   Facility, GroupManager, StaffMember, MeetingAssignee, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
   MeetingFrequencyInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
@@ -44,14 +45,14 @@ interface MeetingPlanManagerProps {
     targetMonth: string
     memo?: string
     schedule?: CreateManualMeetingScheduleInput
-  }) => Promise<void>
-  onConfirmSchedule: (meetingId: string, input: ConfirmMeetingScheduleInput) => Promise<void>
+  }) => Promise<MeetingNotifyResult>
+  onConfirmSchedule: (meetingId: string, input: ConfirmMeetingScheduleInput) => Promise<MeetingNotifyResult>
   onReschedule: (meetingId: string, input: RescheduleMeetingInput) => Promise<void>
   onCancelSchedule: (meetingId: string) => Promise<void>
   onMarkDone: (meetingId: string, executedDate?: string) => Promise<void>
   onSaveFrequency: (existingId: string | undefined, input: MeetingFrequencyInput) => Promise<void>
   onToggleFrequencyActive: (id: string) => Promise<void>
-  onUploadMinute: (meeting: Meeting, file: File) => Promise<MeetingMinute>
+  onUploadMinute: (meeting: Meeting, file: File) => Promise<{ minute: MeetingMinute } & MeetingNotifyResult>
   onDeleteMinute: (minute: MeetingMinute) => Promise<void>
   onMoveTargetMonth: (meetingId: string, newTargetMonth: string) => Promise<void>
   onMoveTargetMonthCascade: (meetingId: string, newTargetMonth: string) => Promise<void>
@@ -99,6 +100,18 @@ export function MeetingPlanManager({
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [selectedManagerId, setSelectedManagerId] = useState('')
+  // MT予定確定通知の結果表示（保存自体は完了している前提。通知だけの成否を伝える）
+  const [notifyNotice, setNotifyNotice] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null)
+  const showNotifyResult = (result: MeetingNotifyResult) => {
+    if (result.notification === 'failed') {
+      setNotifyNotice({ kind: 'warning', message: '保存は完了しましたが、通知メールの送信に失敗しました' })
+    } else if (result.notification === 'sent') {
+      setNotifyNotice({ kind: 'success', message: '保存し、通知メールを送信しました' })
+    } else {
+      // 通知対象外・送信済みでスキップ：前回の表示を残して誤解させないよう消す
+      setNotifyNotice(null)
+    }
+  }
 
   // ── スクロール位置の維持 ──────────────────────────────────────
   // 年間計画は「モーダル本文（ダッシュボード込み）の縦スクロール」と
@@ -192,6 +205,28 @@ export function MeetingPlanManager({
               </button>
             </div>
           </div>
+
+          {/* 通知メールの結果（MT予定確定） */}
+          {notifyNotice && (
+            <div
+              className={cn(
+                'flex items-start gap-2 px-4 py-2 text-sm border-b flex-shrink-0',
+                notifyNotice.kind === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              )}
+              role="status"
+            >
+              <span className="flex-1">{notifyNotice.message}</span>
+              <button
+                onClick={() => setNotifyNotice(null)}
+                className="p-0.5 rounded hover:bg-black/5"
+                aria-label="お知らせを閉じる"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           {/* タブ */}
           <div className="flex border-b bg-gray-50 flex-shrink-0">
@@ -368,17 +403,19 @@ export function MeetingPlanManager({
         onClose={() => setSelectedCell(null)}
         onAddManual={async input => {
           if (!selectedCell) return
-          await onAddManual({
+          const result = await onAddManual({
             facilityId: selectedCell.facility.id,
             meetingType: selectedCell.meetingType,
             targetMonth: selectedCell.targetMonth,
             memo: input.memo,
             schedule: input.schedule,
           })
+          showNotifyResult(result)
         }}
         onConfirmSchedule={async input => {
           if (!selectedCell?.meeting) return
-          await onConfirmSchedule(selectedCell.meeting.id, input)
+          const result = await onConfirmSchedule(selectedCell.meeting.id, input)
+          showNotifyResult(result)
         }}
         onReschedule={async input => {
           if (!selectedCell?.meeting) return

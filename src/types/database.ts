@@ -426,6 +426,9 @@ export type Database = {
           memo: string
           created_at: string
           updated_at: string
+          // 通知管理列（更新は通知API Route側のみ。クライアントからは更新しない）
+          schedule_notified_at: string | null
+          schedule_notify_claimed_at: string | null
         }
         Insert: {
           id?: string
@@ -451,6 +454,8 @@ export type Database = {
           executed_date?: string | null
           memo?: string
           updated_at?: string
+          schedule_notified_at?: string | null
+          schedule_notify_claimed_at?: string | null
         }
         Relationships: [
           {
@@ -484,6 +489,9 @@ export type Database = {
           file_path: string
           uploaded_at: string
           memo: string | null
+          // 通知管理列（更新は通知API Route側のみ。クライアントからは更新しない）
+          notified_at: string | null
+          notify_claimed_at: string | null
         }
         Insert: {
           id?: string
@@ -500,6 +508,8 @@ export type Database = {
           file_path?: string
           uploaded_at?: string
           memo?: string | null
+          notified_at?: string | null
+          notify_claimed_at?: string | null
         }
         Relationships: [
           {

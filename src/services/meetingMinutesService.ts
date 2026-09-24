@@ -8,7 +8,12 @@ import {
   meetingMinutesStorageService, validatePdfFile, buildMeetingMinuteStoragePath,
 } from '@/services/meetingMinutesStorageService'
 
-type MinuteRow = Database['public']['Tables']['meeting_minutes']['Row']
+// 通知管理列（notified_at / notify_claimed_at）は通知API Route専用のため、クライアントでは取得しない
+const MINUTE_COLUMNS = 'id, meeting_id, file_name, file_path, uploaded_at, memo' as const
+type MinuteRow = Pick<
+  Database['public']['Tables']['meeting_minutes']['Row'],
+  'id' | 'meeting_id' | 'file_name' | 'file_path' | 'uploaded_at' | 'memo'
+>
 
 function toMeetingMinute(row: MinuteRow): MeetingMinute {
   return {
@@ -56,7 +61,7 @@ export const meetingMinutesService = {
     const supabase = createClient()
     const { data, error } = await supabase
       .from('meeting_minutes')
-      .select('*')
+      .select(MINUTE_COLUMNS)
       .eq('meeting_id', meetingId)
       .order('uploaded_at', { ascending: false })
     if (error) throw error
@@ -73,7 +78,7 @@ export const meetingMinutesService = {
         file_path: input.filePath,
         memo: input.memo ?? null,
       })
-      .select('*')
+      .select(MINUTE_COLUMNS)
       .single()
     if (error || !data) throw error ?? new Error('議事録の登録に失敗しました')
     return toMeetingMinute(data as MinuteRow)

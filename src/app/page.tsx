@@ -245,13 +245,15 @@ export default function HomePage() {
   // useMeetingPlan 側は meetings を再取得するだけなので、schedules を作成・更新・削除する
   // 操作の成功後はカレンダー（useEvents）も既存の reload で再取得する
   const handleAddMeetingManual: typeof addMeetingManual = async input => {
-    await addMeetingManual(input)
+    const result = await addMeetingManual(input)
     if (input.schedule) await reloadEvents({ silent: true })
+    return result
   }
 
   const handleConfirmMeetingSchedule: typeof confirmMeetingSchedule = async (meetingId, input) => {
-    await confirmMeetingSchedule(meetingId, input)
+    const result = await confirmMeetingSchedule(meetingId, input)
     await reloadEvents({ silent: true })
+    return result
   }
 
   const handleRescheduleMeeting: typeof rescheduleMeeting = async (meetingId, input) => {

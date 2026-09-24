@@ -5,6 +5,7 @@ import { meetingService } from '@/services/meetingService'
 import { meetingFrequencyService } from '@/services/meetingFrequencyService'
 import { meetingScheduleService } from '@/services/meetingScheduleService'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
+import { meetingNotifyService, type MeetingNotifyResult, type MeetingNotifyStatus } from '@/services/meetingNotifyService'
 import type {
   Meeting, MeetingFrequency, MeetingFrequencyInput, MeetingMinute,
   CreateManualMeetingWithScheduleInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
@@ -46,16 +47,26 @@ export function useMeetingPlan(year: number) {
 
   const reloadSilently = useCallback(() => load({ silent: true }), [load])
 
+  // ── MTメール通知 ──────────────────────────────────────────────
+  // 通知は本体の保存が完了した後に呼び、失敗しても保存結果は取り消さない（結果だけ呼び出し元へ返す）。
+  // MT予定確定通知は「日程未定→初めて日付・時間を確定した操作」（addManual の日付あり / confirmSchedule）
+  // からだけ呼ぶ。日程変更・取消・実施済みなどからは呼ばない（サーバー側でも1MT1回に制限している）。
+
   // 実施予定日を入力した場合は、meeting作成と同時にconfirmSchedule()まで
   // 1回の操作で行う（createManualMeeting側で既存関数を再利用して実装済み）
-  const addManual = useCallback(async (input: CreateManualMeetingWithScheduleInput): Promise<void> => {
-    await meetingScheduleService.createManualMeeting(input)
+  const addManual = useCallback(async (input: CreateManualMeetingWithScheduleInput): Promise<MeetingNotifyResult> => {
+    const created = await meetingScheduleService.createManualMeeting(input)
     await reloadSilently()
+    if (!input.schedule || !created.scheduleId) return {}
+    const notification: MeetingNotifyStatus = await meetingNotifyService.notifyScheduleConfirmed(created.id)
+    return { notification }
   }, [reloadSilently])
 
-  const confirmSchedule = useCallback(async (meetingId: string, input: ConfirmMeetingScheduleInput): Promise<void> => {
+  const confirmSchedule = useCallback(async (meetingId: string, input: ConfirmMeetingScheduleInput): Promise<MeetingNotifyResult> => {
     await meetingScheduleService.confirmSchedule(meetingId, input)
     await reloadSilently()
+    const notification = await meetingNotifyService.notifyScheduleConfirmed(meetingId)
+    return { notification }
   }, [reloadSilently])
 
   const rescheduleMeeting = useCallback(async (meetingId: string, input: RescheduleMeetingInput): Promise<void> => {
@@ -95,10 +106,12 @@ export function useMeetingPlan(year: number) {
 
   // 議事録PDFのアップロード/削除後は、年間計画マトリクスの
   // 表示ステータス（minutesCount由来）を最新化するため再取得する
-  const uploadMinute = useCallback(async (meeting: Meeting, file: File): Promise<MeetingMinute> => {
+  // 議事録通知は Storage保存・meeting_minutes登録の両方が成功した後（upload 完了後）に、そのPDF1件について呼ぶ
+  const uploadMinute = useCallback(async (meeting: Meeting, file: File): Promise<{ minute: MeetingMinute } & MeetingNotifyResult> => {
     const minute = await meetingMinutesService.upload(meeting, file)
     await reloadSilently()
-    return minute
+    const notification = await meetingNotifyService.notifyMinuteSaved(minute.id)
+    return { minute, notification }
   }, [reloadSilently])
 
   const deleteMinute = useCallback(async (minute: MeetingMinute): Promise<void> => {
