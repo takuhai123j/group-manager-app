@@ -7,7 +7,6 @@ import type { MeetingType } from '@/lib/types'
 const BUCKET = 'meeting-minutes'
 
 export const MAX_MEETING_MINUTE_FILE_SIZE = 10 * 1024 * 1024 // 10MB
-const SIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60 // 1時間
 
 // PDFのみ許可。ブラウザが返す File.type は必ずしも正確ではないため、
 // 拡張子チェックを主とし、MIME種別は明らかに異なる場合のみ拒否する
@@ -51,15 +50,5 @@ export const meetingMinutesStorageService = {
     const supabase = createClient()
     const { error } = await supabase.storage.from(BUCKET).remove([path])
     if (error) throw error
-  },
-
-  // private bucketのためgetPublicUrlは使わず、閲覧の都度期限付きURLを発行する
-  async getSignedUrl(path: string): Promise<string> {
-    const supabase = createClient()
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(path, SIGNED_URL_EXPIRES_IN_SECONDS)
-    if (error || !data) throw error ?? new Error('署名付きURLの生成に失敗しました')
-    return data.signedUrl
   },
 }

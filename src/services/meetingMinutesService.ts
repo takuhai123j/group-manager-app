@@ -136,8 +136,10 @@ export const meetingMinutesService = {
     await meetingMinutesService.delete(minute.id)
   },
 
-  async getSignedUrl(filePath: string): Promise<string> {
-    return meetingMinutesStorageService.getSignedUrl(filePath)
+  // 閲覧用URL。署名付きURLはサーバー側（/api/meeting-minutes/[id]/open）で発行してリダイレクトする。
+  // スマホでもポップアップブロックされないよう、クライアントは await を挟まず通常リンクで開くこと
+  getOpenUrl(minuteId: string): string {
+    return `/api/meeting-minutes/${encodeURIComponent(minuteId)}/open`
   },
 
   // 施設ごとの議事録履歴一覧（施設・MT種別・年で絞り込み可能）

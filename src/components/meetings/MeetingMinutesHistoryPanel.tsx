@@ -34,7 +34,6 @@ export function MeetingMinutesHistoryPanel({ facilities, year }: MeetingMinutesH
   const [items, setItems] = useState<MeetingMinuteHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [openingId, setOpeningId] = useState<string | null>(null)
 
   // 現在選択中の年を初期値にしつつ、過去分も選べるようにする
   const yearOptions = useMemo(() => {
@@ -61,19 +60,6 @@ export function MeetingMinutesHistoryPanel({ facilities, year }: MeetingMinutesH
   }, [facilityId, meetingType, yearFilter])
 
   useEffect(() => { load() }, [load])
-
-  const handleOpen = async (item: MeetingMinuteHistoryItem) => {
-    setOpeningId(item.id)
-    setError('')
-    try {
-      const url = await meetingMinutesService.getSignedUrl(item.filePath)
-      window.open(url, '_blank', 'noopener,noreferrer')
-    } catch {
-      setError('PDFの表示に失敗しました')
-    } finally {
-      setOpeningId(null)
-    }
-  }
 
   return (
     <div className="p-4">
@@ -146,13 +132,14 @@ export function MeetingMinutesHistoryPanel({ facilities, year }: MeetingMinutesH
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-400">{formatDateTime(item.uploadedAt)}</td>
                   <td className="px-3 py-2 text-center">
-                    <button
-                      onClick={() => handleOpen(item)}
-                      disabled={openingId === item.id}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 mx-auto"
+                    <a
+                      href={meetingMinutesService.getOpenUrl(item.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 mx-auto whitespace-nowrap"
                     >
                       <ExternalLink size={12} />開く
-                    </button>
+                    </a>
                   </td>
                 </tr>
               ))}

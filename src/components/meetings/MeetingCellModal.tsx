@@ -103,7 +103,6 @@ export function MeetingCellModal({
   // （保存後の再読込で meeting が更新されても、直前の通知結果は表示し続ける）
   useEffect(() => { setMinutesNotice(null) }, [isOpen, meeting?.id])
   const [uploading, setUploading] = useState(false)
-  const [openingId, setOpeningId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -282,19 +281,6 @@ export function MeetingCellModal({
       setMinutesError(err instanceof Error ? err.message : 'アップロードに失敗しました')
     } finally {
       setUploading(false)
-    }
-  }
-
-  const handleOpenMinute = async (minute: MeetingMinute) => {
-    setOpeningId(minute.id)
-    setMinutesError('')
-    try {
-      const url = await meetingMinutesService.getSignedUrl(minute.filePath)
-      window.open(url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      setMinutesError(err instanceof Error ? err.message : 'PDFの表示に失敗しました')
-    } finally {
-      setOpeningId(null)
     }
   }
 
@@ -544,13 +530,14 @@ export function MeetingCellModal({
                           <span className="flex-1 min-w-0 text-sm text-gray-700 truncate" title={minute.fileName}>
                             {minute.fileName}
                           </span>
-                          <button
-                            onClick={() => handleOpenMinute(minute)}
-                            disabled={openingId === minute.id}
-                            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 flex-shrink-0"
+                          <a
+                            href={meetingMinutesService.getOpenUrl(minute.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 flex-shrink-0 whitespace-nowrap"
                           >
                             <ExternalLink size={12} />開く
-                          </button>
+                          </a>
                           <button
                             onClick={() => handleDeleteMinute(minute)}
                             disabled={deletingId === minute.id}
