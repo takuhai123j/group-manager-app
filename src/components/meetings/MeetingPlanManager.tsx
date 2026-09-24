@@ -102,7 +102,8 @@ export function MeetingPlanManager({
   const [selectedManagerId, setSelectedManagerId] = useState('')
   // スマホ（sm未満）ではダッシュボードを初期状態で折りたたみ、年間計画表をすぐ見せる。PCは常に表示
   const [mobileDashboardOpen, setMobileDashboardOpen] = useState(false)
-  // MT予定確定通知の結果表示（保存自体は完了している前提。通知だけの成否を伝える）
+  // MT予定確定通知の結果表示（保存自体は完了している前提。通知だけの成否を伝える）。
+  // 今回の操作で実際に予定確定通知を行った場合だけ表示し、それ以外の操作の開始時には必ず消す
   const [notifyNotice, setNotifyNotice] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null)
   const showNotifyResult = (result: MeetingNotifyResult) => {
     if (result.notification === 'failed') {
@@ -428,6 +429,7 @@ export function MeetingPlanManager({
         onClose={() => setSelectedCell(null)}
         onAddManual={async input => {
           if (!selectedCell) return
+          setNotifyNotice(null)
           const result = await onAddManual({
             facilityId: selectedCell.facility.id,
             meetingType: selectedCell.meetingType,
@@ -439,33 +441,47 @@ export function MeetingPlanManager({
         }}
         onConfirmSchedule={async input => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null)
           const result = await onConfirmSchedule(selectedCell.meeting.id, input)
           showNotifyResult(result)
         }}
         onReschedule={async input => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onReschedule(selectedCell.meeting.id, input)
         }}
         onCancelSchedule={async () => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onCancelSchedule(selectedCell.meeting.id)
         }}
         onMarkDone={async executedDate => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onMarkDone(selectedCell.meeting.id, executedDate)
         }}
-        onUploadMinute={onUploadMinute}
-        onDeleteMinute={onDeleteMinute}
+        onUploadMinute={(meeting, file) => {
+          // 議事録の通知結果は議事録欄に表示する。上部の予定確定通知の結果は残さない
+          setNotifyNotice(null)
+          return onUploadMinute(meeting, file)
+        }}
+        onDeleteMinute={minute => {
+          setNotifyNotice(null)
+          return onDeleteMinute(minute)
+        }}
         onMoveTargetMonth={async newTargetMonth => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onMoveTargetMonth(selectedCell.meeting.id, newTargetMonth)
         }}
         onMoveTargetMonthCascade={async newTargetMonth => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onMoveTargetMonthCascade(selectedCell.meeting.id, newTargetMonth)
         }}
         onDeleteMeeting={async () => {
           if (!selectedCell?.meeting) return
+          setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onDeleteMeeting(selectedCell.meeting.id)
         }}
       />
