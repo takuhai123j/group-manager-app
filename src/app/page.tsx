@@ -355,7 +355,7 @@ export default function HomePage() {
   const handleSave = useCallback(async (input: CreateEventInput) => {
     if (editingEvent) await updateEvent(editingEvent.id, input)
     else await addEvent(input)
-    if (editingEvent?.type === 'mt' || input.type === 'mt') await reloadMeetingPlan()
+    if (editingEvent?.type === 'mt' || input.type === 'mt') await reloadMeetingPlan({ silent: true })
   }, [editingEvent, addEvent, updateEvent, reloadMeetingPlan])
 
   const handleSaveBulk = useCallback(async (inputs: CreateEventInput[]) => {
@@ -365,7 +365,7 @@ export default function HomePage() {
   const handleDelete = useCallback(async (id: string) => {
     const wasMt = events.find(e => e.id === id)?.type === 'mt'
     await deleteEvent(id)
-    if (wasMt) await reloadMeetingPlan()
+    if (wasMt) await reloadMeetingPlan({ silent: true })
   }, [events, deleteEvent, reloadMeetingPlan])
 
   const handleDayClick = useCallback((date: Date) => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useLayoutEffect } from 'react'
 import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -99,6 +99,32 @@ export function MeetingPlanManager({
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [selectedManagerId, setSelectedManagerId] = useState('')
+
+  // ── スクロール位置の維持 ──────────────────────────────────────
+  // 年間計画は「モーダル本文（ダッシュボード込み）の縦スクロール」と
+  // 「計画表そのもの（縦横）のスクロール」の2つのスクロール枠を持つ。
+  // 操作のたびに最新位置を記録しておき、保存後の再読込・再描画で位置が変わっていたら元に戻す
+  // （操作していたセル付近がそのまま見えている状態を保つ）
+  const contentScrollRef = useRef<HTMLDivElement>(null)
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+  const savedScroll = useRef({ contentTop: 0, tableTop: 0, tableLeft: 0 })
+
+  const rememberScroll = () => {
+    savedScroll.current = {
+      contentTop: contentScrollRef.current?.scrollTop ?? 0,
+      tableTop: tableScrollRef.current?.scrollTop ?? 0,
+      tableLeft: tableScrollRef.current?.scrollLeft ?? 0,
+    }
+  }
+
+  useLayoutEffect(() => {
+    const { contentTop, tableTop, tableLeft } = savedScroll.current
+    const content = contentScrollRef.current
+    const table = tableScrollRef.current
+    if (content && content.scrollTop !== contentTop) content.scrollTop = contentTop
+    if (table && table.scrollTop !== tableTop) table.scrollTop = tableTop
+    if (table && table.scrollLeft !== tableLeft) table.scrollLeft = tableLeft
+  }, [meetings, frequencies])
 
   const lookup = useMemo(() => buildMeetingLookup(meetings), [meetings])
 
@@ -199,7 +225,11 @@ export function MeetingPlanManager({
           </div>
 
           {/* コンテンツ */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            ref={contentScrollRef}
+            onScroll={tab === 'plan' ? rememberScroll : undefined}
+            className="flex-1 overflow-y-auto"
+          >
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -246,14 +276,25 @@ export function MeetingPlanManager({
                     {selectedManagerId ? 'このG長の担当施設が設定されていません' : '有効な施設がありません'}
                   </p>
                 ) : (
-                  <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                    <table className="border-collapse text-sm min-w-full">
+                  // 計画表は縦横ともこの枠内でスクロールする（月ヘッダーを sticky top で固定するため、
+                  // 横スクロール枠と縦スクロール枠を同じ要素にしている）。
+                  // z-index: 本文セル(0) < 施設・種別列(10) < 月ヘッダー(30) < 左上の施設・種別見出し(40)
+                  // 施設列は幅を 112px に固定し、種別列の sticky left-28(112px) と一致させる
+                  // （狭い画面で施設列が縮むと、2列の隙間から横スクロール中の月セルが透けるため）
+                  // border-separate にしているのは、border-collapse だと sticky セルの罫線が
+                  // スクロール時に消えるため（border-spacing-0 で見た目は従来と同じ）
+                  <div
+                    ref={tableScrollRef}
+                    onScroll={rememberScroll}
+                    className="overflow-auto max-h-[70vh] border border-gray-200 rounded-xl"
+                  >
+                    <table className="border-separate border-spacing-0 text-sm min-w-full">
                       <thead>
-                        <tr className="bg-gray-50 text-xs text-gray-500">
-                          <th className="sticky left-0 z-20 bg-gray-50 border-b border-r px-3 py-2 text-left w-28">施設</th>
-                          <th className="sticky left-28 z-20 bg-gray-50 border-b border-r px-3 py-2 text-left w-20">種別</th>
+                        <tr className="text-xs text-gray-500">
+                          <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r px-3 py-2 text-left w-28 min-w-28 max-w-28">施設</th>
+                          <th className="sticky top-0 left-28 z-40 bg-gray-50 border-b border-r px-3 py-2 text-left w-20 min-w-20">種別</th>
                           {MONTHS_IN_YEAR.map(m => (
-                            <th key={m} className="border-b px-1 py-2 text-center w-16 font-medium">{m}月</th>
+                            <th key={m} className="sticky top-0 z-30 bg-gray-50 border-b px-1 py-2 text-center w-16 font-medium">{m}月</th>
                           ))}
                         </tr>
                       </thead>
@@ -264,12 +305,13 @@ export function MeetingPlanManager({
                               {typeIdx === 0 && (
                                 <td
                                   rowSpan={MEETING_TYPE_ORDER.length}
-                                  className="sticky left-0 z-10 bg-white border-r border-b px-3 py-2 align-top font-medium text-gray-700 whitespace-nowrap"
+                                  className="sticky left-0 z-10 bg-white border-r border-b px-3 py-2 align-top font-medium text-gray-700 whitespace-nowrap w-28 min-w-28 max-w-28 truncate"
+                                  title={facility.name}
                                 >
                                   {facility.name}
                                 </td>
                               )}
-                              <td className="sticky left-28 z-10 bg-white border-r border-b px-3 py-2 text-gray-500 whitespace-nowrap">
+                              <td className="sticky left-28 z-10 bg-white border-r border-b px-3 py-2 text-gray-500 whitespace-nowrap min-w-20">
                                 {MEETING_TYPE_LABELS[meetingType]}
                               </td>
                               {MONTHS_IN_YEAR.map(month => {
@@ -279,7 +321,7 @@ export function MeetingPlanManager({
                                 return (
                                   <td key={month} className="border-b p-1 text-center">
                                     <button
-                                      onClick={() => openCell(facility, meetingType, month)}
+                                      onClick={() => { rememberScroll(); openCell(facility, meetingType, month) }}
                                       className={cn(
                                         'w-full h-9 rounded-md text-xs flex items-center justify-center transition-colors hover:opacity-80',
                                         CELL_STYLES[status]

@@ -20,8 +20,13 @@ export function useMeetingPlan(year: number) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // silent: true の場合は loading を立てずに再取得する。
+  // 保存・変更後の再読込で一覧がローディング表示に置き換わると、年間計画の表が
+  // remount されてスクロール位置が先頭に戻ってしまうため、操作後は silent で読み直す
+  // （初回表示・年の切替は従来どおりローディング表示あり）
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const [meetingsData, frequenciesData] = await Promise.all([
@@ -33,38 +38,40 @@ export function useMeetingPlan(year: number) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'MT年間計画の読み込みに失敗しました')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [year])
 
   useEffect(() => { load() }, [load])
 
+  const reloadSilently = useCallback(() => load({ silent: true }), [load])
+
   // 実施予定日を入力した場合は、meeting作成と同時にconfirmSchedule()まで
   // 1回の操作で行う（createManualMeeting側で既存関数を再利用して実装済み）
   const addManual = useCallback(async (input: CreateManualMeetingWithScheduleInput): Promise<void> => {
     await meetingScheduleService.createManualMeeting(input)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const confirmSchedule = useCallback(async (meetingId: string, input: ConfirmMeetingScheduleInput): Promise<void> => {
     await meetingScheduleService.confirmSchedule(meetingId, input)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const rescheduleMeeting = useCallback(async (meetingId: string, input: RescheduleMeetingInput): Promise<void> => {
     await meetingScheduleService.rescheduleMeeting(meetingId, input)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const cancelSchedule = useCallback(async (meetingId: string): Promise<void> => {
     await meetingScheduleService.cancelSchedule(meetingId)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const markDone = useCallback(async (meetingId: string, executedDate?: string): Promise<void> => {
     await meetingService.markDone(meetingId, executedDate)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   // 頻度設定の作成・更新（既存行があれば更新、なければ新規作成）。
   // 保存後は選択中の年の年間計画を再生成する。
@@ -76,44 +83,44 @@ export function useMeetingPlan(year: number) {
       ? await meetingFrequencyService.update(existingId, input)
       : await meetingFrequencyService.create(input)
     await meetingService.regenerateYear(saved.id, year)
-    await load()
-  }, [year, load])
+    await reloadSilently()
+  }, [year, reloadSilently])
 
   // 有効/無効の切替も「頻度変更」として扱い、選択中の年を再生成する
   const toggleFrequencyActive = useCallback(async (id: string): Promise<void> => {
     await meetingFrequencyService.toggleActive(id)
     await meetingService.regenerateYear(id, year)
-    await load()
-  }, [year, load])
+    await reloadSilently()
+  }, [year, reloadSilently])
 
   // 議事録PDFのアップロード/削除後は、年間計画マトリクスの
   // 表示ステータス（minutesCount由来）を最新化するため再取得する
   const uploadMinute = useCallback(async (meeting: Meeting, file: File): Promise<MeetingMinute> => {
     const minute = await meetingMinutesService.upload(meeting, file)
-    await load()
+    await reloadSilently()
     return minute
-  }, [load])
+  }, [reloadSilently])
 
   const deleteMinute = useCallback(async (minute: MeetingMinute): Promise<void> => {
     await meetingMinutesService.remove(minute)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   // 計画月の手動調整（年間計画そのものの直接編集。schedules/meeting_frequenciesには触れない）
   const moveTargetMonth = useCallback(async (meetingId: string, newTargetMonth: string): Promise<void> => {
     await meetingService.moveTargetMonth(meetingId, newTargetMonth)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const moveTargetMonthCascade = useCallback(async (meetingId: string, newTargetMonth: string): Promise<void> => {
     await meetingService.moveTargetMonthCascade(meetingId, newTargetMonth)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   const deleteMeeting = useCallback(async (meetingId: string): Promise<void> => {
     await meetingService.deleteIfSafe(meetingId)
-    await load()
-  }, [load])
+    await reloadSilently()
+  }, [reloadSilently])
 
   return {
     meetings,
