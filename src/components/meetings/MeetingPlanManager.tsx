@@ -326,7 +326,6 @@ export function MeetingPlanManager({
                 <div className={cn(mobileDashboardOpen ? 'block' : 'hidden', 'sm:block')}>
                   <MeetingDashboard
                     meetings={visibleMeetings}
-                    facilities={visibleFacilities}
                     onOpenMeeting={openMeetingDirectly}
                   />
                 </div>

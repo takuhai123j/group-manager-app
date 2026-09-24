@@ -4,15 +4,14 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, FileWarning, CheckCircle2, CalendarDays, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  buildMeetingDashboardSummary, buildFacilityMeetingProgress, elapsedDaysSince,
+  buildMeetingDashboardSummary, elapsedDaysSince,
   parseTargetMonth, getMeetingCellStatus, MEETING_CELL_STATUS_LABELS,
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
-import type { Meeting, Facility } from '@/lib/types'
+import type { Meeting } from '@/lib/types'
 
 interface MeetingDashboardProps {
   meetings: Meeting[]
-  facilities: Facility[]
   onOpenMeeting: (meeting: Meeting) => void
 }
 
@@ -76,15 +75,11 @@ function SummaryCard({
   )
 }
 
-export function MeetingDashboard({ meetings, facilities, onOpenMeeting }: MeetingDashboardProps) {
+export function MeetingDashboard({ meetings, onOpenMeeting }: MeetingDashboardProps) {
   const [activeCard, setActiveCard] = useState<CardKey | null>(null)
 
   const today = useMemo(() => new Date(), [])
   const summary = useMemo(() => buildMeetingDashboardSummary(meetings, today), [meetings, today])
-  const facilityProgress = useMemo(
-    () => buildFacilityMeetingProgress(meetings, facilities),
-    [meetings, facilities]
-  )
 
   const toggleCard = (key: CardKey) => setActiveCard(prev => prev === key ? null : key)
 
@@ -211,35 +206,6 @@ export function MeetingDashboard({ meetings, facilities, onOpenMeeting }: Meetin
               </table>
             </div>
           )}
-        </div>
-      )}
-
-      {/* 施設別進捗 */}
-      {facilityProgress.length > 0 && (
-        <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-3 py-1.5 bg-gray-50 border-b text-xs font-semibold text-gray-500">施設別進捗（計画 / 実施 / 議事録）</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b">
-                  <th className="px-3 py-1.5 text-left font-medium">施設</th>
-                  <th className="px-3 py-1.5 text-center font-medium w-20">計画</th>
-                  <th className="px-3 py-1.5 text-center font-medium w-20">実施</th>
-                  <th className="px-3 py-1.5 text-center font-medium w-20">議事録</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {facilityProgress.map(f => (
-                  <tr key={f.facilityId}>
-                    <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{f.facilityName}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-600">{f.plannedCount}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-600">{f.doneCount}</td>
-                    <td className="px-3 py-1.5 text-center text-gray-600">{f.minutesCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
     </div>

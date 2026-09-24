@@ -132,27 +132,3 @@ export function elapsedDaysSince(dateStr: string, today: Date = new Date()): num
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)))
 }
 
-// 施設ごとのMT進捗（予定件数 / 実施件数 / 議事録登録件数。facility種別+kitchen種別を合算）
-export interface FacilityMeetingProgress {
-  facilityId: string
-  facilityName: string
-  plannedCount: number
-  doneCount: number
-  minutesCount: number
-}
-
-export function buildFacilityMeetingProgress(
-  meetings: Meeting[],
-  facilities: Array<{ id: string; name: string }>
-): FacilityMeetingProgress[] {
-  return facilities.map(f => {
-    const forFacility = meetings.filter(m => m.facilityId === f.id)
-    return {
-      facilityId: f.id,
-      facilityName: f.name,
-      plannedCount: forFacility.length,
-      doneCount: forFacility.filter(m => m.status === 'done').length,
-      minutesCount: forFacility.filter(m => m.minutesCount > 0).length,
-    }
-  })
-}
