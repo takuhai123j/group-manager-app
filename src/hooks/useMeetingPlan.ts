@@ -7,7 +7,7 @@ import { meetingScheduleService } from '@/services/meetingScheduleService'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
 import type {
   Meeting, MeetingFrequency, MeetingFrequencyInput, MeetingMinute,
-  CreateManualMeetingInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
+  CreateManualMeetingWithScheduleInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
 } from '@/lib/types'
 
 // MT年間計画画面向けのデータ取得・操作をまとめたフック。
@@ -39,8 +39,10 @@ export function useMeetingPlan(year: number) {
 
   useEffect(() => { load() }, [load])
 
-  const addManual = useCallback(async (input: CreateManualMeetingInput): Promise<void> => {
-    await meetingService.addManual(input)
+  // 実施予定日を入力した場合は、meeting作成と同時にconfirmSchedule()まで
+  // 1回の操作で行う（createManualMeeting側で既存関数を再利用して実装済み）
+  const addManual = useCallback(async (input: CreateManualMeetingWithScheduleInput): Promise<void> => {
+    await meetingScheduleService.createManualMeeting(input)
     await load()
   }, [load])
 

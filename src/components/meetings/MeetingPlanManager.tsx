@@ -12,6 +12,7 @@ import { MEETING_TYPE_LABELS } from '@/lib/types'
 import type {
   Facility, GroupManager, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
   MeetingFrequencyInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
+  CreateManualMeetingScheduleInput,
 } from '@/lib/types'
 import { MeetingCellModal } from './MeetingCellModal'
 import { MeetingFrequencyPanel } from './MeetingFrequencyPanel'
@@ -33,7 +34,13 @@ interface MeetingPlanManagerProps {
   loading: boolean
   error: string | null
   onClose: () => void
-  onAddManual: (input: { facilityId: string; meetingType: MeetingType; targetMonth: string; memo?: string }) => Promise<void>
+  onAddManual: (input: {
+    facilityId: string
+    meetingType: MeetingType
+    targetMonth: string
+    memo?: string
+    schedule?: CreateManualMeetingScheduleInput
+  }) => Promise<void>
   onConfirmSchedule: (meetingId: string, input: ConfirmMeetingScheduleInput) => Promise<void>
   onReschedule: (meetingId: string, input: RescheduleMeetingInput) => Promise<void>
   onCancelSchedule: (meetingId: string) => Promise<void>
@@ -312,13 +319,14 @@ export function MeetingPlanManager({
         targetMonth={selectedCell?.targetMonth ?? ''}
         candidateManagers={selectedCell ? candidateManagersFor(selectedCell.facility.id) : []}
         onClose={() => setSelectedCell(null)}
-        onAddManual={async memo => {
+        onAddManual={async input => {
           if (!selectedCell) return
           await onAddManual({
             facilityId: selectedCell.facility.id,
             meetingType: selectedCell.meetingType,
             targetMonth: selectedCell.targetMonth,
-            memo,
+            memo: input.memo,
+            schedule: input.schedule,
           })
         }}
         onConfirmSchedule={async input => {

@@ -9,8 +9,12 @@ export function useEvents() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // silent: true の場合は loading を立てずに再取得する
+  // （ページ全体がローディング画面に切り替わり、開いているモーダルが閉じてしまうのを防ぐため。
+  //   MT年間計画など他画面からschedulesを操作した後の再同期で使用）
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const data = await scheduleService.getAll()
@@ -18,7 +22,7 @@ export function useEvents() {
     } catch {
       setError('スケジュールの読み込みに失敗しました')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 

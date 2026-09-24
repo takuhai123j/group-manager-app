@@ -233,6 +233,29 @@ export default function HomePage() {
     return result
   }
 
+  // ── MT年間計画からのschedule操作後、カレンダー側の予定一覧も再同期する ──
+  // useMeetingPlan 側は meetings を再取得するだけなので、schedules を作成・更新・削除する
+  // 操作の成功後はカレンダー（useEvents）も既存の reload で再取得する
+  const handleAddMeetingManual: typeof addMeetingManual = async input => {
+    await addMeetingManual(input)
+    if (input.schedule) await reloadEvents({ silent: true })
+  }
+
+  const handleConfirmMeetingSchedule: typeof confirmMeetingSchedule = async (meetingId, input) => {
+    await confirmMeetingSchedule(meetingId, input)
+    await reloadEvents({ silent: true })
+  }
+
+  const handleRescheduleMeeting: typeof rescheduleMeeting = async (meetingId, input) => {
+    await rescheduleMeeting(meetingId, input)
+    await reloadEvents({ silent: true })
+  }
+
+  const handleCancelMeetingSchedule: typeof cancelMeetingSchedule = async meetingId => {
+    await cancelMeetingSchedule(meetingId)
+    await reloadEvents({ silent: true })
+  }
+
   const handleDismissMigration = () => {
     dismissMigration()
     setShowMigration(false)
@@ -568,10 +591,10 @@ export default function HomePage() {
         loading={meetingPlanLoading}
         error={meetingPlanError}
         onClose={() => setMeetingPlanOpen(false)}
-        onAddManual={addMeetingManual}
-        onConfirmSchedule={confirmMeetingSchedule}
-        onReschedule={rescheduleMeeting}
-        onCancelSchedule={cancelMeetingSchedule}
+        onAddManual={handleAddMeetingManual}
+        onConfirmSchedule={handleConfirmMeetingSchedule}
+        onReschedule={handleRescheduleMeeting}
+        onCancelSchedule={handleCancelMeetingSchedule}
         onMarkDone={markMeetingDone}
         onSaveFrequency={saveMeetingFrequency}
         onToggleFrequencyActive={toggleMeetingFrequencyActive}

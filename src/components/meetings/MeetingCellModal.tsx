@@ -5,14 +5,14 @@ import {
   X, CalendarClock, CalendarCheck, CalendarX, CheckCircle2, Plus,
   FileText, Upload, ExternalLink, Trash2, ArrowRightLeft,
 } from 'lucide-react'
-import { cn, generateTimeSlots, toDateString } from '@/lib/utils'
+import { cn, generateTimeSlots } from '@/lib/utils'
 import { parseTargetMonth, getMeetingCellStatus, MEETING_CELL_STATUS_LABELS } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
 import { validatePdfFile } from '@/services/meetingMinutesStorageService'
 import type {
   Meeting, MeetingType, GroupManager, MeetingMinute,
-  ConfirmMeetingScheduleInput, RescheduleMeetingInput,
+  ConfirmMeetingScheduleInput, RescheduleMeetingInput, CreateManualMeetingScheduleInput,
 } from '@/lib/types'
 
 interface MeetingCellModalProps {
@@ -23,7 +23,7 @@ interface MeetingCellModalProps {
   targetMonth: string
   candidateManagers: GroupManager[]  // 当該施設に紐づく有効なG長
   onClose: () => void
-  onAddManual: (memo: string) => Promise<void>
+  onAddManual: (input: { memo: string; schedule?: CreateManualMeetingScheduleInput }) => Promise<void>
   onConfirmSchedule: (input: ConfirmMeetingScheduleInput) => Promise<void>
   onReschedule: (input: RescheduleMeetingInput) => Promise<void>
   onCancelSchedule: () => Promise<void>
@@ -35,9 +35,23 @@ interface MeetingCellModalProps {
   onDeleteMeeting: () => Promise<void>
 }
 
-type Mode = 'view' | 'confirm' | 'reschedule' | 'markDone' | 'add' | 'moveMonth'
+// 'confirm'/'reschedule' は 'schedule' に統合（保存操作の1本化。
+// schedule_idの有無はhandleSaveSchedule内部で判定してconfirmSchedule/rescheduleMeetingを出し分ける）
+type Mode = 'view' | 'add' | 'schedule' | 'markDone' | 'moveMonth'
 
 const TIME_SLOTS = generateTimeSlots(8, 20)
+
+// schedule未作成（新規・日程未定）のMTにだけ使う時間の初期値
+// （meetingScheduleService.confirmSchedule の未指定時デフォルトと揃えている）
+const DEFAULT_START_TIME = '10:00'
+const DEFAULT_END_TIME = '11:00'
+
+// DBの時刻（'HH:MM' または 'HH:MM:SS'）をセレクトの値（'HH:MM'）に揃える
+const toTimeValue = (t: string) => t.slice(0, 5)
+
+// 既存scheduleの時刻が選択肢（08:00〜20:00の30分刻み）に無い場合も、現在値として選択肢に含める
+const withCurrentSlot = (current: string) =>
+  TIME_SLOTS.includes(current) ? TIME_SLOTS : [...TIME_SLOTS, current].sort()
 
 function formatMonthLabel(targetMonth: string): string {
   const { year, month } = parseTargetMonth(targetMonth)
@@ -68,11 +82,13 @@ export function MeetingCellModal({
   const [error, setError] = useState('')
 
   const [addMemo, setAddMemo] = useState('')
-  const [date, setDate] = useState(toDateString(new Date()))
-  const [startTime, setStartTime] = useState('10:00')
-  const [endTime, setEndTime] = useState('11:00')
+  // 実施予定日は「未入力」を許容するため、今日の日付を勝手に初期値にしない
+  const [date, setDate] = useState('')
+  const [isAllDay, setIsAllDay] = useState(false)
+  const [startTime, setStartTime] = useState(DEFAULT_START_TIME)
+  const [endTime, setEndTime] = useState(DEFAULT_END_TIME)
   const [groupManagerId, setGroupManagerId] = useState('')
-  const [executedDate, setExecutedDate] = useState(toDateString(new Date()))
+  const [executedDate, setExecutedDate] = useState('')
   const [moveMonth, setMoveMonth] = useState('')
   const [moveCascade, setMoveCascade] = useState(false)
 
@@ -88,10 +104,22 @@ export function MeetingCellModal({
     setMode(meeting ? 'view' : 'add')
     setError('')
     setAddMemo('')
-    setDate(meeting?.scheduleDate ?? toDateString(new Date()))
-    setStartTime('10:00')
-    setEndTime('11:00')
-    setGroupManagerId(candidateManagers.length === 1 ? candidateManagers[0].id : '')
+    setDate(meeting?.scheduleDate ?? '')
+    if (meeting?.scheduleId) {
+      // 既存scheduleがある場合は、現在登録されている値を初期値にする
+      // （デフォルト値で上書き保存してしまわないように）。
+      // 終日予定の時刻は '00:00' のため、終日を外したときはデフォルト時間を出す
+      const allDay = meeting.scheduleIsAllDay ?? false
+      setIsAllDay(allDay)
+      setStartTime(!allDay && meeting.scheduleStartTime ? toTimeValue(meeting.scheduleStartTime) : DEFAULT_START_TIME)
+      setEndTime(!allDay && meeting.scheduleEndTime ? toTimeValue(meeting.scheduleEndTime) : DEFAULT_END_TIME)
+      setGroupManagerId(meeting.scheduleGroupManagerId ?? '')
+    } else {
+      setIsAllDay(false)
+      setStartTime(DEFAULT_START_TIME)
+      setEndTime(DEFAULT_END_TIME)
+      setGroupManagerId(candidateManagers.length === 1 ? candidateManagers[0].id : '')
+    }
     // 実施日は「今日」を勝手に初期値にしない。
     // schedule_idがあり予定日が取得できる場合のみ、その予定日を初期値にする
     setExecutedDate(meeting?.scheduleId && meeting?.scheduleDate ? meeting.scheduleDate : '')
@@ -122,6 +150,10 @@ export function MeetingCellModal({
       ? 'この施設に有効なG長が割り当てられていません'
       : undefined
 
+  // 'schedule'モードに入った時点でschedule_idが未設定だったかどうか
+  // （confirmSchedule / rescheduleMeeting の出し分けと、担当G長の必須/任意の判定に使う）
+  const wasUnscheduled = !meeting?.scheduleId
+
   const runAction = async (fn: () => Promise<void>) => {
     setSaving(true)
     setError('')
@@ -135,23 +167,41 @@ export function MeetingCellModal({
     }
   }
 
-  const handleAdd = () => runAction(() => onAddManual(addMemo.trim()))
-
-  const handleConfirm = () => {
+  // 手動追加（統合フォーム）:
+  //   実施予定日が空 → meetingだけ登録（日付未定）
+  //   実施予定日あり → meeting作成と同時にschedule確定まで1回の操作で行う
+  const handleAddUnified = () => {
+    if (!date) {
+      runAction(() => onAddManual({ memo: addMemo.trim() }))
+      return
+    }
+    if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
     if (needsManagerChoice && !groupManagerId) { setError('担当G長を選択してください'); return }
-    if (startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    runAction(() => onConfirmSchedule({
-      date, startTime, endTime,
-      groupManagerId: groupManagerId || undefined,
+    runAction(() => onAddManual({
+      memo: addMemo.trim(),
+      schedule: { date, startTime, endTime, isAllDay, groupManagerId: groupManagerId || undefined },
     }))
   }
 
-  const handleReschedule = () => {
-    if (needsManagerChoice && groupManagerId && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    runAction(() => onReschedule({
-      date, startTime, endTime,
-      groupManagerId: groupManagerId || undefined,
-    }))
+  // 予定を保存（統合フォーム）:
+  //   schedule_idなし → confirmSchedule()（新規作成）
+  //   schedule_idあり → rescheduleMeeting()（既存UPDATE、二重作成しない）
+  const handleSaveSchedule = () => {
+    if (!meeting) return
+    if (!date) { setError('実施予定日を入力してください'); return }
+    if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
+    if (wasUnscheduled && needsManagerChoice && !groupManagerId) { setError('担当G長を選択してください'); return }
+
+    // 日程変更時の担当G長は、現在の担当から変更された場合のみ送る
+    // （未変更なら既存scheduleの担当をそのまま維持する）
+    const changedManagerId =
+      groupManagerId && groupManagerId !== meeting.scheduleGroupManagerId ? groupManagerId : undefined
+
+    runAction(() =>
+      wasUnscheduled
+        ? onConfirmSchedule({ date, startTime, endTime, isAllDay, groupManagerId: groupManagerId || undefined })
+        : onReschedule({ date, startTime, endTime, isAllDay, groupManagerId: changedManagerId })
+    )
   }
 
   const handleCancel = () => {
@@ -229,6 +279,43 @@ export function MeetingCellModal({
     }
   }
 
+  const timeFields = (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">開始時間</label>
+        <select
+          value={startTime}
+          onChange={e => setStartTime(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {withCurrentSlot(startTime).map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">終了時間</label>
+        <select
+          value={endTime}
+          onChange={e => setEndTime(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {withCurrentSlot(endTime).map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+
+  const allDayToggle = (
+    <label className="flex items-center gap-2 text-sm text-gray-700">
+      <input
+        type="checkbox"
+        checked={isAllDay}
+        onChange={e => setIsAllDay(e.target.checked)}
+        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+      />
+      終日
+    </label>
+  )
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -248,12 +335,53 @@ export function MeetingCellModal({
             計画月：<span className="font-medium text-gray-700">{formatMonthLabel(targetMonth)}</span>
           </div>
 
-          {/* 追加モード（meetingがまだ存在しない） */}
+          {/* 追加モード（meetingがまだ存在しない。実施予定日を入れれば登録と同時にG長スケジュールにも反映する） */}
           {mode === 'add' && (
             <div className="space-y-3">
               <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                 この月にはまだMTの計画がありません。手動で追加できます。
               </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">実施予定日</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => { setDate(e.target.value); setError('') }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  未定のまま登録することもできます（後からMT詳細画面で入力できます）
+                </p>
+              </div>
+
+              {date && (
+                <>
+                  {allDayToggle}
+                  {!isAllDay && timeFields}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      担当G長 {needsManagerChoice && <span className="text-red-500">*</span>}
+                    </label>
+                    {candidateManagers.length <= 1 ? (
+                      <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                        {managerLabel}
+                      </p>
+                    ) : (
+                      <select
+                        value={groupManagerId}
+                        onChange={e => setGroupManagerId(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">選択してください</option>
+                        {candidateManagers.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">メモ</label>
                 <input
@@ -297,30 +425,22 @@ export function MeetingCellModal({
               )}
 
               <div className="pt-2 border-t space-y-2">
-                {!meeting.scheduleId && meeting.status === 'scheduled' && (
+                {meeting.status === 'scheduled' && (
                   <button
-                    onClick={() => setMode('confirm')}
+                    onClick={() => setMode('schedule')}
                     className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
                   >
-                    <CalendarClock size={16} />日程を確定する
+                    <CalendarClock size={16} />予定を保存
                   </button>
                 )}
                 {meeting.scheduleId && meeting.status === 'scheduled' && (
-                  <>
-                    <button
-                      onClick={() => setMode('reschedule')}
-                      className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-blue-300 text-blue-700 text-sm font-medium hover:bg-blue-50"
-                    >
-                      <CalendarClock size={16} />日程を変更する
-                    </button>
-                    <button
-                      onClick={handleCancel}
-                      disabled={saving}
-                      className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <CalendarX size={16} />日程を取り消す
-                    </button>
-                  </>
+                  <button
+                    onClick={handleCancel}
+                    disabled={saving}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <CalendarX size={16} />日程を取り消す
+                  </button>
                 )}
                 {meeting.status === 'scheduled' && (
                   <button
@@ -408,47 +528,39 @@ export function MeetingCellModal({
             </div>
           )}
 
-          {/* 日程確定 / 変更フォーム */}
-          {(mode === 'confirm' || mode === 'reschedule') && (
+          {/* 予定を保存（日程確定・日程変更の統合フォーム。schedule_id有無で内部的に出し分ける） */}
+          {mode === 'schedule' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">日付 <span className="text-red-500">*</span></label>
+                <h3 className="text-sm font-semibold text-gray-800">予定を保存</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  保存すると、この内容でG長のスケジュールにも登録されます。
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  実施予定日 <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="date"
                   value={date}
-                  onChange={e => setDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={e => { setDate(e.target.value); setError('') }}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                    error && !date ? 'border-red-400' : 'border-gray-300'
+                  )}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">開始時間</label>
-                  <select
-                    value={startTime}
-                    onChange={e => setStartTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">終了時間</label>
-                  <select
-                    value={endTime}
-                    onChange={e => setEndTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
 
-              {mode === 'confirm' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    担当G長 {needsManagerChoice && <span className="text-red-500">*</span>}
-                  </label>
-                  {candidateManagers.length <= 1 ? (
+              {allDayToggle}
+              {!isAllDay && timeFields}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  担当G長 {wasUnscheduled && needsManagerChoice && <span className="text-red-500">*</span>}
+                </label>
+                {wasUnscheduled ? (
+                  candidateManagers.length <= 1 ? (
                     <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                       {managerLabel}
                     </p>
@@ -463,25 +575,27 @@ export function MeetingCellModal({
                         <option key={m.id} value={m.id}>{m.name}</option>
                       ))}
                     </select>
-                  )}
-                </div>
-              )}
-
-              {mode === 'reschedule' && candidateManagers.length > 1 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">担当G長（変更する場合のみ）</label>
+                  )
+                ) : (
                   <select
                     value={groupManagerId}
                     onChange={e => setGroupManagerId(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">変更しない</option>
+                    {/* 現在の担当G長が候補外（施設の担当変更・無効化など）でも現在値として表示する */}
+                    {meeting?.scheduleGroupManagerId &&
+                      !candidateManagers.some(m => m.id === meeting.scheduleGroupManagerId) && (
+                        <option value={meeting.scheduleGroupManagerId}>
+                          {meeting.scheduleGroupManagerName ?? '現在の担当'}（現在）
+                        </option>
+                      )}
                     {candidateManagers.map(m => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
@@ -592,9 +706,8 @@ export function MeetingCellModal({
               </button>
               <button
                 onClick={
-                  mode === 'add' ? handleAdd :
-                  mode === 'confirm' ? handleConfirm :
-                  mode === 'reschedule' ? handleReschedule :
+                  mode === 'add' ? handleAddUnified :
+                  mode === 'schedule' ? handleSaveSchedule :
                   mode === 'moveMonth' ? handleMoveMonth :
                   handleMarkDone
                 }
@@ -602,12 +715,13 @@ export function MeetingCellModal({
                 className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 {mode === 'add' && <Plus size={16} />}
-                {mode === 'confirm' && <CalendarCheck size={16} />}
+                {mode === 'schedule' && <CalendarCheck size={16} />}
                 {mode === 'markDone' && <CheckCircle2 size={16} />}
                 {mode === 'moveMonth' && <ArrowRightLeft size={16} />}
                 {saving
                   ? '保存中…'
-                  : mode === 'add' ? '追加する'
+                  : mode === 'add' ? '登録する'
+                  : mode === 'schedule' ? '予定を保存'
                   : mode === 'markDone' ? '実施済みにする'
                   : mode === 'moveMonth' ? '移動する'
                   : '保存'}

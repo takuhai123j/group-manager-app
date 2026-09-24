@@ -4,6 +4,7 @@ import { meetingService } from '@/services/meetingService'
 import { buildMeetingScheduleTitle } from '@/constants/eventTypes'
 import type {
   Meeting, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
+  CreateManualMeetingWithScheduleInput,
 } from '@/lib/types'
 
 // meetings と schedules の連携（日程確定・変更・取消）のみを扱う。
@@ -123,5 +124,42 @@ export const meetingScheduleService = {
 
     await scheduleService.delete(meeting.scheduleId)
     return meetingService.getById(meetingId)
+  },
+
+  // MT手動追加 + （実施予定日を入力した場合のみ）schedule確定までを1回の操作で行う。
+  // meetingService.addManual() と 既存 confirmSchedule() をそのまま再利用するだけで、
+  // schedule登録ロジックの新規実装は行わない。
+  //
+  // schedule未指定（日付未定のまま登録）の場合は meeting だけ作成して終了する。
+  //
+  // schedule指定ありで confirmSchedule() が失敗した場合、
+  // 「meetingだけ登録されたのにG長予定まで登録されたと誤解される」状態を避けるため、
+  // 今回この呼び出しの中で新規作成した meeting のみ best-effort で rollback（削除）する。
+  // 既存meetingの日程変更（confirmSchedule/rescheduleMeeting）の失敗時にmeeting自体を
+  // 削除することは絶対にない（それらの関数はここから作られたmeetingにしか適用されない）。
+  async createManualMeeting(input: CreateManualMeetingWithScheduleInput): Promise<Meeting> {
+    const created = await meetingService.addManual({
+      facilityId: input.facilityId,
+      meetingType: input.meetingType,
+      targetMonth: input.targetMonth,
+      memo: input.memo,
+    })
+
+    if (!input.schedule) return created
+
+    try {
+      return await meetingScheduleService.confirmSchedule(created.id, {
+        date: input.schedule.date,
+        startTime: input.schedule.startTime,
+        endTime: input.schedule.endTime,
+        isAllDay: input.schedule.isAllDay,
+        groupManagerId: input.schedule.groupManagerId,
+      })
+    } catch (err) {
+      await meetingService.deleteIfSafe(created.id).catch(() => {
+        // rollback自体の失敗はここでは握りつぶし、元のエラーを呼び出し元に伝える
+      })
+      throw err
+    }
   },
 }

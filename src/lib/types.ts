@@ -276,6 +276,10 @@ export interface Meeting {
   frequencyId: string | null // null = 手動追加（年間計画の自動再生成の対象外）
   scheduleId: string | null  // 日程確定後に紐づく schedules.id
   scheduleDate: string | null // schedules.date（日程確定済みの場合のみ。正はschedules側）
+  scheduleStartTime: string | null // schedules.start_time（日程確定済みの場合のみ）
+  scheduleEndTime: string | null   // schedules.end_time（日程確定済みの場合のみ）
+  scheduleIsAllDay: boolean | null // schedules.is_all_day（日程確定済みの場合のみ）
+  scheduleGroupManagerId: string | null   // 日程確定済みの場合の担当G長ID
   scheduleGroupManagerName: string | null // 日程確定済みの場合の担当G長名（表示用）
   status: MeetingStatus
   executedDate: string | null
@@ -291,6 +295,21 @@ export type CreateManualMeetingInput = {
   meetingType: MeetingType
   targetMonth: string
   memo?: string
+}
+
+// 手動追加と同時に実施予定日を入力した場合に使うschedule情報
+// （meetingScheduleService.confirmSchedule() へそのまま渡す）
+export type CreateManualMeetingScheduleInput = {
+  date: string
+  startTime: string
+  endTime: string
+  isAllDay: boolean
+  groupManagerId?: string
+}
+
+// 手動追加フォームの入力全体。schedule未指定 = 日付未定のままmeetingだけ登録する
+export type CreateManualMeetingWithScheduleInput = CreateManualMeetingInput & {
+  schedule?: CreateManualMeetingScheduleInput
 }
 
 export type UpdateMeetingInput = {
