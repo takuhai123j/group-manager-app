@@ -169,7 +169,7 @@ export function GroupManagerModal({
           <Users size={18} className="text-blue-600 flex-shrink-0" />
           <h2 className="text-base font-semibold text-gray-800 flex-1">
             {panel === 'list'
-              ? 'G長マスタ管理'
+              ? 'G長・主任マスタ管理'
               : editingId ? 'G長を編集' : 'G長を追加'}
           </h2>
           <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100">

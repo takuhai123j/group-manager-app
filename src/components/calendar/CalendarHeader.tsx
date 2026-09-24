@@ -69,7 +69,7 @@ export function CalendarHeader({
   const closeMenu = () => setMenuOpen(false)
 
   const menuItems: Array<{ label: string; icon: React.ReactNode; onClick: () => void } | null> = [
-    { label: 'G長管理',    icon: <Users size={14} />,     onClick: () => { onOpenGroupManager(); closeMenu() } },
+    { label: 'G長・主任管理', icon: <Users size={14} />,     onClick: () => { onOpenGroupManager(); closeMenu() } },
     { label: 'リーダー管理',   icon: <Users size={14} />,     onClick: () => { onOpenLeaderManager(); closeMenu() } },
     { label: 'ラウンダー管理',  icon: <Users size={14} />,     onClick: () => { onOpenRounderManager(); closeMenu() } },
     { label: '現場社員管理',   icon: <Users size={14} />,     onClick: () => { onOpenFieldEmployeeManager(); closeMenu() } },

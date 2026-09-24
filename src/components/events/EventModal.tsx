@@ -398,7 +398,7 @@ export function EventModal({
             </label>
             {selectableManagers.length === 0 ? (
               <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                有効なG長がいません。G長マスタ管理から追加してください。
+                有効なG長がいません。G長・主任マスタ管理から追加してください。
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
