@@ -303,6 +303,9 @@ export default function HomePage() {
 
   // ── フィルタ ─────────────────────────────────────────────────────
   const [filters, setFilters] = useState<EventFilters>(EMPTY_FILTERS)
+  // スマホ（sm未満）では絞り込みバーを常時表示せず、「⋯ → 絞り込み」から開く
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
+  const isFilterActive = filters.types.length > 0 || filters.facilities.length > 0
 
   // 職種タブ・人の絞り込み。
   //   G長タブ    : G長・主任担当の予定のみ（リーダー担当のMTは含めない）
@@ -483,9 +486,10 @@ export default function HomePage() {
         onOpenRounderManager={() => setRounderManagerOpen(true)}
         onOpenFieldEmployeeManager={() => setFieldEmployeeManagerOpen(true)}
         onOpenHelp={() => setHelpOpen(true)}
+        onOpenFilter={() => setMobileFilterOpen(true)}
       />
 
-      {/* Filter bar - PC only */}
+      {/* Filter bar - PC（常時表示） */}
       <div className="hidden sm:block flex-shrink-0">
         <FilterBar
           filters={filters}
@@ -496,6 +500,23 @@ export default function HomePage() {
           onClear={() => setFilters(EMPTY_FILTERS)}
         />
       </div>
+
+      {/* Filter bar - スマホ（「⋯ → 絞り込み」で開く。絞り込み中はクリアできるよう表示を続ける） */}
+      {(mobileFilterOpen || isFilterActive) && (
+        <div className="sm:hidden flex-shrink-0 max-h-[50dvh] overflow-y-auto">
+          <FilterBar
+            key={mobileFilterOpen ? 'mobile-open' : 'mobile-active'}
+            filters={filters}
+            facilityNames={facilityNames}
+            totalCount={leaderBaseCount}
+            filteredCount={filteredEvents.length}
+            onChange={setFilters}
+            onClear={() => setFilters(EMPTY_FILTERS)}
+            initiallyExpanded={mobileFilterOpen}
+            onClose={() => setMobileFilterOpen(false)}
+          />
+        </div>
+      )}
 
       {/* Calendar body */}
       <main className="flex-1 bg-white overflow-y-auto min-h-0">

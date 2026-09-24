@@ -13,6 +13,9 @@ interface FilterBarProps {
   filteredCount: number
   onChange: (filters: EventFilters) => void
   onClear: () => void
+  // スマホで「⋯ → 絞り込み」から開いた場合に使う（PCでは未指定）
+  initiallyExpanded?: boolean
+  onClose?: () => void
 }
 
 export function FilterBar({
@@ -22,8 +25,10 @@ export function FilterBar({
   filteredCount,
   onChange,
   onClear,
+  initiallyExpanded = false,
+  onClose,
 }: FilterBarProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(initiallyExpanded)
 
   const activeCount = filters.types.length + filters.facilities.length
   const isFiltered = activeCount > 0
@@ -111,6 +116,15 @@ export function FilterBar({
                 クリア
               </button>
             </>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              aria-label="絞り込みを閉じる"
+            >
+              <X size={16} />
+            </button>
           )}
         </div>
       </div>

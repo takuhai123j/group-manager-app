@@ -99,6 +99,9 @@ export function MeetingCellModal({
   const [minutesError, setMinutesError] = useState('')
   // 議事録通知メールの結果（アップロード自体は完了している前提）
   const [minutesNotice, setMinutesNotice] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null)
+  // 議事録通知の結果は、モーダルを開き直した・別のMTに切り替えた時だけ消す
+  // （保存後の再読込で meeting が更新されても、直前の通知結果は表示し続ける）
+  useEffect(() => { setMinutesNotice(null) }, [isOpen, meeting?.id])
   const [uploading, setUploading] = useState(false)
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -130,7 +133,6 @@ export function MeetingCellModal({
     setMoveMonth(meeting ? meeting.targetMonth.slice(0, 7) : '')
     setMoveCascade(false)
     setMinutesError('')
-    setMinutesNotice(null)
   }, [isOpen, meeting, candidateAssignees])
 
   useEffect(() => {
@@ -350,9 +352,11 @@ export function MeetingCellModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+      {/* 見出し / 本文（スクロール） / ボタン（下部固定）の3段構造。
+          スマホのブラウザUI（アドレスバー等）で隠れないよう高さは dvh で指定する */}
+      <div className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md max-h-[92dvh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white z-10">
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-white flex-shrink-0 rounded-t-2xl sm:rounded-t-xl">
           <h2 className="text-base font-semibold text-gray-800">
             {facilityName} / {MEETING_TYPE_LABELS[meetingType]}
           </h2>
@@ -361,6 +365,8 @@ export function MeetingCellModal({
           </button>
         </div>
 
+        {/* 本文（ここだけスクロール） */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="p-4 space-y-4">
           <div className="text-sm text-gray-500">
             計画月：<span className="font-medium text-gray-700">{formatMonthLabel(targetMonth)}</span>
@@ -717,9 +723,10 @@ export function MeetingCellModal({
 
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
+        </div>
 
-        {/* Footer */}
-        <div className="flex gap-2 px-4 py-3 border-t sticky bottom-0 bg-white">
+        {/* Footer（常に表示） */}
+        <div className="flex gap-2 px-4 py-3 border-t bg-white flex-shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {mode === 'view' ? (
             <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50">
               閉じる

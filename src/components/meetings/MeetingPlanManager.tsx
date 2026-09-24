@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useLayoutEffect } from 'react'
-import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   MEETING_TYPE_ORDER, MONTHS_IN_YEAR, MEETING_CELL_STATUS_LABELS,
@@ -100,6 +100,8 @@ export function MeetingPlanManager({
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [selectedManagerId, setSelectedManagerId] = useState('')
+  // スマホ（sm未満）ではダッシュボードを初期状態で折りたたみ、年間計画表をすぐ見せる。PCは常に表示
+  const [mobileDashboardOpen, setMobileDashboardOpen] = useState(false)
   // MT予定確定通知の結果表示（保存自体は完了している前提。通知だけの成否を伝える）
   const [notifyNotice, setNotifyNotice] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null)
   const showNotifyResult = (result: MeetingNotifyResult) => {
@@ -160,6 +162,17 @@ export function MeetingPlanManager({
     ? lookup.get(meetingLookupKey(selectedCell.facility.id, selectedCell.meetingType, selectedCell.targetMonth)) ?? null
     : null
 
+  // 選択中セルの施設のMT担当者候補（G長・主任 + リーダー）。
+  // MeetingCellModal はこの配列の変化でフォームを初期化するため、入力が変わった時だけ作り直す
+  // （毎レンダーで新しい配列を渡すと、親の再描画のたびにモーダルの入力・表示がリセットされる）
+  const selectedFacilityId = selectedCell?.facility.id
+  const selectedCandidateAssignees = useMemo<MeetingAssignee[]>(
+    () => selectedFacilityId
+      ? buildAssigneeCandidates(selectedFacilityId, activeManagers, managerFacilities, activeLeaders, leaderFacilities)
+      : [],
+    [selectedFacilityId, activeManagers, managerFacilities, activeLeaders, leaderFacilities]
+  )
+
   if (!isOpen) return null
 
   const openCell = (facility: Facility, meetingType: MeetingType, month: number) => {
@@ -175,15 +188,12 @@ export function MeetingPlanManager({
     setSelectedCell({ facility, meetingType: meeting.meetingType, targetMonth: meeting.targetMonth, meeting })
   }
 
-  // 施設のMT担当者候補（G長・主任 + リーダー）
-  const candidateAssigneesFor = (facilityId: string): MeetingAssignee[] =>
-    buildAssigneeCandidates(facilityId, activeManagers, managerFacilities, activeLeaders, leaderFacilities)
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center">
         <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-        <div className="relative bg-white w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-xl sm:max-w-6xl shadow-xl flex flex-col overflow-hidden">
+        <div className="relative bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[92vh] sm:rounded-xl sm:max-w-6xl shadow-xl flex flex-col overflow-hidden">
 
           {/* ヘッダー */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-white z-10 flex-shrink-0">
@@ -300,11 +310,25 @@ export function MeetingPlanManager({
                   </select>
                 </div>
 
-                <MeetingDashboard
-                  meetings={visibleMeetings}
-                  facilities={visibleFacilities}
-                  onOpenMeeting={openMeetingDirectly}
-                />
+                {/* スマホのみ：ダッシュボードの開閉ボタン */}
+                <button
+                  onClick={() => setMobileDashboardOpen(v => !v)}
+                  className="sm:hidden w-full flex items-center justify-between px-3 py-2 mb-3 rounded-lg border border-gray-200 bg-gray-50 text-sm font-medium text-gray-700"
+                  aria-expanded={mobileDashboardOpen}
+                >
+                  <span>
+                    進捗を見る
+                    <span className="ml-1.5 text-xs font-normal text-gray-500">今月・期限超過・議事録</span>
+                  </span>
+                  <ChevronDown size={16} className={cn('transition-transform', mobileDashboardOpen && 'rotate-180')} />
+                </button>
+                <div className={cn(mobileDashboardOpen ? 'block' : 'hidden', 'sm:block')}>
+                  <MeetingDashboard
+                    meetings={visibleMeetings}
+                    facilities={visibleFacilities}
+                    onOpenMeeting={openMeetingDirectly}
+                  />
+                </div>
 
                 {visibleFacilities.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-12">
@@ -314,22 +338,23 @@ export function MeetingPlanManager({
                   // 計画表は縦横ともこの枠内でスクロールする（月ヘッダーを sticky top で固定するため、
                   // 横スクロール枠と縦スクロール枠を同じ要素にしている）。
                   // z-index: 本文セル(0) < 施設・種別列(10) < 月ヘッダー(30) < 左上の施設・種別見出し(40)
-                  // 施設列は幅を 112px に固定し、種別列の sticky left-28(112px) と一致させる
+                  // 施設列の幅は種別列の sticky オフセットと一致させる（PC: 112px / left-28、スマホ: 80px / left-20）。
+                  // スマホは各月を56px以上にして縮ませず、月部分だけを横スクロールさせる
                   // （狭い画面で施設列が縮むと、2列の隙間から横スクロール中の月セルが透けるため）
                   // border-separate にしているのは、border-collapse だと sticky セルの罫線が
                   // スクロール時に消えるため（border-spacing-0 で見た目は従来と同じ）
                   <div
                     ref={tableScrollRef}
                     onScroll={rememberScroll}
-                    className="overflow-auto max-h-[70vh] border border-gray-200 rounded-xl"
+                    className="overflow-auto max-h-[70dvh] border border-gray-200 rounded-xl"
                   >
                     <table className="border-separate border-spacing-0 text-sm min-w-full">
                       <thead>
                         <tr className="text-xs text-gray-500">
-                          <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r px-3 py-2 text-left w-28 min-w-28 max-w-28">施設</th>
-                          <th className="sticky top-0 left-28 z-40 bg-gray-50 border-b border-r px-3 py-2 text-left w-20 min-w-20">種別</th>
+                          <th className="sticky top-0 left-0 z-40 bg-gray-50 border-b border-r px-2 sm:px-3 py-2 text-left w-20 min-w-20 max-w-20 sm:w-28 sm:min-w-28 sm:max-w-28">施設</th>
+                          <th className="sticky top-0 left-20 sm:left-28 z-40 bg-gray-50 border-b border-r px-2 sm:px-3 py-2 text-left w-14 min-w-14 max-w-14 sm:w-20 sm:min-w-20 sm:max-w-none">種別</th>
                           {MONTHS_IN_YEAR.map(m => (
-                            <th key={m} className="sticky top-0 z-30 bg-gray-50 border-b px-1 py-2 text-center w-16 font-medium">{m}月</th>
+                            <th key={m} className="sticky top-0 z-30 bg-gray-50 border-b px-1 py-2 text-center w-16 min-w-14 sm:min-w-0 font-medium whitespace-nowrap">{m}月</th>
                           ))}
                         </tr>
                       </thead>
@@ -340,13 +365,13 @@ export function MeetingPlanManager({
                               {typeIdx === 0 && (
                                 <td
                                   rowSpan={MEETING_TYPE_ORDER.length}
-                                  className="sticky left-0 z-10 bg-white border-r border-b px-3 py-2 align-top font-medium text-gray-700 whitespace-nowrap w-28 min-w-28 max-w-28 truncate"
+                                  className="sticky left-0 z-10 bg-white border-r border-b px-2 sm:px-3 py-2 align-top font-medium text-xs sm:text-sm text-gray-700 whitespace-nowrap w-20 min-w-20 max-w-20 sm:w-28 sm:min-w-28 sm:max-w-28 truncate"
                                   title={facility.name}
                                 >
                                   {facility.name}
                                 </td>
                               )}
-                              <td className="sticky left-28 z-10 bg-white border-r border-b px-3 py-2 text-gray-500 whitespace-nowrap min-w-20">
+                              <td className="sticky left-20 sm:left-28 z-10 bg-white border-r border-b px-2 sm:px-3 py-2 text-xs sm:text-sm text-gray-500 whitespace-nowrap w-14 min-w-14 max-w-14 sm:w-auto sm:min-w-20 sm:max-w-none">
                                 {MEETING_TYPE_LABELS[meetingType]}
                               </td>
                               {MONTHS_IN_YEAR.map(month => {
@@ -354,11 +379,11 @@ export function MeetingPlanManager({
                                 const meeting = lookup.get(meetingLookupKey(facility.id, meetingType, targetMonth))
                                 const status = getMeetingCellStatus(meeting)
                                 return (
-                                  <td key={month} className="border-b p-1 text-center">
+                                  <td key={month} className="border-b p-1 text-center min-w-14 sm:min-w-0">
                                     <button
                                       onClick={() => { rememberScroll(); openCell(facility, meetingType, month) }}
                                       className={cn(
-                                        'w-full h-9 rounded-md text-xs flex items-center justify-center transition-colors hover:opacity-80',
+                                        'w-full h-9 rounded-md text-xs leading-tight flex items-center justify-center transition-colors hover:opacity-80',
                                         CELL_STYLES[status]
                                       )}
                                       title={`${facility.name} ${MEETING_TYPE_LABELS[meetingType]} ${month}月 - ${MEETING_CELL_STATUS_LABELS[status]}`}
@@ -399,7 +424,7 @@ export function MeetingPlanManager({
         facilityName={selectedCell?.facility.name ?? ''}
         meetingType={selectedCell?.meetingType ?? 'facility'}
         targetMonth={selectedCell?.targetMonth ?? ''}
-        candidateAssignees={selectedCell ? candidateAssigneesFor(selectedCell.facility.id) : []}
+        candidateAssignees={selectedCandidateAssignees}
         onClose={() => setSelectedCell(null)}
         onAddManual={async input => {
           if (!selectedCell) return
