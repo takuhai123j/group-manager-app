@@ -108,6 +108,8 @@ export function EventModal({
 
   const isAllDay = isAllDayType(form.type)
   const isHalfDay = isHalfDayType(form.type)
+  // 担当欄の表示名。MTは「担当者」、それ以外は従来どおり「担当G長」（内部は groupLeaderId のまま）
+  const assigneeLabel = form.type === 'mt' ? '担当者' : '担当G長'
   const showBulkMode = isAllDay && !editingEvent
 
   useEffect(() => {
@@ -144,7 +146,7 @@ export function EventModal({
       if (form.startTime >= form.endTime) e.endTime = '終了時間は開始時間より後にしてください'
     }
     if (isHalfDay && !form.startTime) e.startTime = '開始時間を選択してください'
-    if (!form.groupLeaderId) e.groupLeaderId = '担当G長を選択してください'
+    if (!form.groupLeaderId) e.groupLeaderId = `${assigneeLabel}を選択してください`
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -392,7 +394,7 @@ export function EventModal({
           {/* Group leader */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              担当G長 <span className="text-red-500">*</span>
+              {assigneeLabel} <span className="text-red-500">*</span>
             </label>
             {selectableManagers.length === 0 ? (
               <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">

@@ -238,6 +238,31 @@ CREATE POLICY "anon_all_staff_members" ON staff_members
   FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
 
 -- -------------------------------------------------------
+-- Staff Member Facilities（スタッフの担当施設・多対多）
+-- 当面UIから設定するのは role = 'leader' のみだが、
+-- 将来 rounder 等にも流用できるようDB側ではroleを限定しない。
+-- G長の group_manager_facilities とは独立。
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS staff_member_facilities (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_member_id  UUID        NOT NULL REFERENCES staff_members(id) ON DELETE CASCADE,
+  facility_id      UUID        NOT NULL REFERENCES facilities(id)    ON DELETE CASCADE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT staff_member_facilities_unique UNIQUE (staff_member_id, facility_id)
+);
+
+-- UNIQUE(staff_member_id, facility_id) の索引が staff_member_id での検索を兼ねるため、
+-- 施設からの逆引き用のみ追加する
+CREATE INDEX IF NOT EXISTS idx_staff_member_facilities_facility_id
+  ON staff_member_facilities(facility_id);
+
+ALTER TABLE staff_member_facilities ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_staff_member_facilities" ON staff_member_facilities;
+CREATE POLICY "anon_all_staff_member_facilities" ON staff_member_facilities
+  FOR ALL TO anon USING (TRUE) WITH CHECK (TRUE);
+
+-- -------------------------------------------------------
 -- Meeting Frequencies（施設ごとのMT頻度設定）
 -- meeting_type: 'facility'（施設MT） | 'kitchen'（厨房MT）
 -- 施設×MT種別ごとに何ヶ月おきに実施するかを設定する。

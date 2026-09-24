@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { X, ChevronLeft, ChevronUp, ChevronDown, Pencil, Users, Check } from 'lucide-react'
 import { cn, PRESET_COLORS } from '@/lib/utils'
-import type { StaffMember, StaffMemberInput, StaffRole } from '@/lib/types'
+import type { Facility, StaffMember, StaffMemberInput, StaffRole } from '@/lib/types'
 import { STAFF_ROLE_LABELS } from '@/lib/types'
 
 interface StaffMemberModalProps {
@@ -16,6 +16,10 @@ interface StaffMemberModalProps {
   onToggleActive: (id: string) => Promise<void>
   onMoveUp: (id: string) => Promise<void>
   onMoveDown: (id: string) => Promise<void>
+  // 担当施設（当面は role = 'leader' のみ。3つとも渡された場合だけ担当施設欄を表示する）
+  allFacilities?: Facility[]
+  memberFacilities?: Record<string, string[]>
+  onSetFacilities?: (staffMemberId: string, facilityIds: string[]) => Promise<void>
 }
 
 type Panel = 'list' | 'form'
@@ -65,12 +69,17 @@ export function StaffMemberModal({
   onToggleActive,
   onMoveUp,
   onMoveDown,
+  allFacilities = [],
+  memberFacilities = {},
+  onSetFacilities,
 }: StaffMemberModalProps) {
   const roleLabel = STAFF_ROLE_LABELS[role]
+  const facilityEnabled = role === 'leader' && !!onSetFacilities
 
   const [panel, setPanel] = useState<Panel>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<StaffMemberInput>(EMPTY_FORM)
+  const [selectedFacilityIds, setSelectedFacilityIds] = useState<string[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -78,6 +87,7 @@ export function StaffMemberModal({
     if (!isOpen) {
       setPanel('list')
       setError('')
+      setSelectedFacilityIds([])
     }
   }, [isOpen])
 
@@ -95,10 +105,16 @@ export function StaffMemberModal({
 
   const activeMembers = members.filter(m => m.active)
   const inactiveMembers = members.filter(m => !m.active)
+  const activeFacilities = allFacilities.filter(f => f.active)
+  // 選択中の施設（無効化済みの施設も解除できるよう allFacilities から引く）
+  const selectedFacilities = selectedFacilityIds
+    .map(id => allFacilities.find(f => f.id === id))
+    .filter((f): f is Facility => !!f)
 
   const openAdd = () => {
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setSelectedFacilityIds([])
     setError('')
     setPanel('form')
   }
@@ -106,6 +122,7 @@ export function StaffMemberModal({
   const openEdit = (m: StaffMember) => {
     setEditingId(m.id)
     setForm({ name: m.name, color: m.color, memo: m.memo })
+    setSelectedFacilityIds(memberFacilities[m.id] ?? [])
     setError('')
     setPanel('form')
   }
@@ -121,11 +138,23 @@ export function StaffMemberModal({
     try {
       if (editingId) {
         await onUpdate(editingId, form)
+        if (facilityEnabled) await onSetFacilities!(editingId, selectedFacilityIds)
       } else {
         const newId = await onAdd(form)
         if (!newId) { setError('追加に失敗しました'); return }
+        // 本体の作成に成功した時点で「このスタッフの編集」に切り替える。
+        // 担当施設の保存だけ失敗した場合も、再度「保存」で編集として再試行でき、
+        // 本体の二重登録や重複名エラーにならない（作成済みの本体は削除しない）
+        setEditingId(newId)
+        if (facilityEnabled) await onSetFacilities!(newId, selectedFacilityIds)
       }
       backToList()
+    } catch {
+      setError(
+        editingId
+          ? '担当施設の保存に失敗しました。時間をおいて再度お試しください'
+          : `${roleLabel}は登録されましたが、担当施設の保存に失敗しました。もう一度「保存」を押してください`
+      )
     } finally {
       setSaving(false)
     }
@@ -134,6 +163,12 @@ export function StaffMemberModal({
   const set = (key: keyof StaffMemberInput, val: string) => {
     setForm(prev => ({ ...prev, [key]: val }))
     setError('')
+  }
+
+  const toggleFacility = (facilityId: string, checked: boolean) => {
+    setSelectedFacilityIds(prev =>
+      checked ? [...prev, facilityId] : prev.filter(id => id !== facilityId)
+    )
   }
 
   return (
@@ -169,7 +204,16 @@ export function StaffMemberModal({
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{m.name}</p>
-                      {m.memo && <p className="text-xs text-gray-400 truncate">{m.memo}</p>}
+                      {facilityEnabled ? (
+                        <p className="text-xs text-gray-400 truncate">
+                          {(memberFacilities[m.id] ?? []).length > 0
+                            ? `担当 ${(memberFacilities[m.id] ?? []).length}施設`
+                            : '担当施設 未設定'}
+                          {m.memo && ` ・ ${m.memo}`}
+                        </p>
+                      ) : (
+                        m.memo && <p className="text-xs text-gray-400 truncate">{m.memo}</p>
+                      )}
                     </div>
                     <div className="flex flex-col gap-0.5 flex-shrink-0">
                       <button
@@ -293,6 +337,69 @@ export function StaffMemberModal({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {/* 担当施設（リーダーのみ。G長の「基本担当施設」と同じ操作感） */}
+            {facilityEnabled && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  担当施設
+                  {selectedFacilityIds.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-blue-600">
+                      {selectedFacilityIds.length}施設選択中
+                    </span>
+                  )}
+                </label>
+
+                {/* 選択中の担当施設一覧（×で解除） */}
+                {selectedFacilities.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedFacilities.map(f => (
+                      <span
+                        key={f.id}
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-xs text-blue-700"
+                      >
+                        {f.name}{!f.active && '（無効）'}
+                        <button
+                          type="button"
+                          onClick={() => toggleFacility(f.id, false)}
+                          className="p-0.5 rounded-full hover:bg-blue-100"
+                          aria-label={`${f.name}を担当から解除`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {activeFacilities.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2">施設が登録されていません</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg p-2 max-h-44 overflow-y-auto space-y-1">
+                    {activeFacilities.map(f => (
+                      <label
+                        key={f.id}
+                        className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedFacilityIds.includes(f.id)}
+                          onChange={e => toggleFacility(f.id, e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">{f.name}</span>
+                        {f.area && (
+                          <span className="text-xs text-gray-400 ml-auto">{f.area}</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-gray-400">
+                  チェックで追加・解除し、「保存」で反映されます
+                </p>
+              </div>
+            )}
 
             {error && <p className="text-xs text-red-500">{error}</p>}
 

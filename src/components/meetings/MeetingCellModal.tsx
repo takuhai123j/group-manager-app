@@ -176,7 +176,7 @@ export function MeetingCellModal({
       return
     }
     if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    if (needsManagerChoice && !groupManagerId) { setError('担当G長を選択してください'); return }
+    if (needsManagerChoice && !groupManagerId) { setError('担当者を選択してください'); return }
     runAction(() => onAddManual({
       memo: addMemo.trim(),
       schedule: { date, startTime, endTime, isAllDay, groupManagerId: groupManagerId || undefined },
@@ -190,7 +190,7 @@ export function MeetingCellModal({
     if (!meeting) return
     if (!date) { setError('実施予定日を入力してください'); return }
     if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
-    if (wasUnscheduled && needsManagerChoice && !groupManagerId) { setError('担当G長を選択してください'); return }
+    if (wasUnscheduled && needsManagerChoice && !groupManagerId) { setError('担当者を選択してください'); return }
 
     // 日程変更時の担当G長は、現在の担当から変更された場合のみ送る
     // （未変更なら既存scheduleの担当をそのまま維持する）
@@ -360,7 +360,7 @@ export function MeetingCellModal({
                   {!isAllDay && timeFields}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      担当G長 {needsManagerChoice && <span className="text-red-500">*</span>}
+                      担当者 {needsManagerChoice && <span className="text-red-500">*</span>}
                     </label>
                     {candidateManagers.length <= 1 ? (
                       <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -557,7 +557,7 @@ export function MeetingCellModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  担当G長 {wasUnscheduled && needsManagerChoice && <span className="text-red-500">*</span>}
+                  担当者 {wasUnscheduled && needsManagerChoice && <span className="text-red-500">*</span>}
                 </label>
                 {wasUnscheduled ? (
                   candidateManagers.length <= 1 ? (

@@ -26,6 +26,7 @@ import { ShiftFileManager } from '@/components/shifts/ShiftFileManager'
 import { MeetingPlanManager } from '@/components/meetings/MeetingPlanManager'
 import { StaffMemberModal } from '@/components/staff/StaffMemberModal'
 import { useStaffMembers } from '@/hooks/useStaffMembers'
+import { useStaffMemberFacilities } from '@/hooks/useStaffMemberFacilities'
 import { ShiftChangeManager } from '@/components/shiftChanges/ShiftChangeManager'
 import { useShiftChanges } from '@/hooks/useShiftChanges'
 import { HelpModal } from '@/components/help/HelpModal'
@@ -189,6 +190,12 @@ export default function HomePage() {
     moveUp: moveLeaderUp,
     moveDown: moveLeaderDown,
   } = useStaffMembers('leader')
+
+  // リーダーの担当施設（staff_member_facilities）。G長の useManagerFacilities とは独立
+  const {
+    memberFacilities: leaderFacilities,
+    setFacilities: setLeaderFacilities,
+  } = useStaffMemberFacilities()
 
   const {
     members: rounderMembers,
@@ -616,6 +623,9 @@ export default function HomePage() {
         onToggleActive={toggleLeaderActive}
         onMoveUp={moveLeaderUp}
         onMoveDown={moveLeaderDown}
+        allFacilities={allFacilities}
+        memberFacilities={leaderFacilities}
+        onSetFacilities={setLeaderFacilities}
       />
 
       {/* ラウンダー管理モーダル */}

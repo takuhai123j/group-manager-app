@@ -155,7 +155,7 @@ export function MeetingDashboard({ meetings, facilities, onOpenMeeting }: Meetin
                     ) : (
                       <>
                         <th className="px-3 py-2 text-left font-medium">予定日</th>
-                        <th className="px-3 py-2 text-left font-medium">担当G長</th>
+                        <th className="px-3 py-2 text-left font-medium">担当者</th>
                         <th className="px-3 py-2 text-left font-medium">状態</th>
                       </>
                     )}

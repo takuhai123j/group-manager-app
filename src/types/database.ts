@@ -227,6 +227,41 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_member_facilities: {
+        Row: {
+          id: string
+          staff_member_id: string
+          facility_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          staff_member_id: string
+          facility_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          staff_member_id?: string
+          facility_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_member_facilities_staff_member_id_fkey'
+            columns: ['staff_member_id']
+            isOneToOne: false
+            referencedRelation: 'staff_members'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'staff_member_facilities_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       shift_change_records: {
         Row: {
           id: string

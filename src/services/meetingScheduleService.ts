@@ -38,16 +38,16 @@ async function resolveResponsibleGroupManagerId(
   if (explicitGroupManagerId) {
     const isValid = candidates.some(c => c.id === explicitGroupManagerId)
     if (!isValid) {
-      throw new Error('指定された担当G長はこの施設に割り当てられていないか、無効化されています')
+      throw new Error('指定された担当者はこの施設に割り当てられていないか、無効化されています')
     }
     return explicitGroupManagerId
   }
 
   if (candidates.length === 1) return candidates[0].id
   if (candidates.length === 0) {
-    throw new Error('この施設に有効なG長が割り当てられていません。担当G長を指定してください')
+    throw new Error('この施設に有効なG長が割り当てられていません。担当者を指定してください')
   }
-  throw new Error('この施設には複数の有効なG長が割り当てられています。担当G長を指定してください')
+  throw new Error('この施設には複数の有効なG長が割り当てられています。担当者を指定してください')
 }
 
 export const meetingScheduleService = {
