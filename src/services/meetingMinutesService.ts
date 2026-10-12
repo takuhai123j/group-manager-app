@@ -153,7 +153,7 @@ export const meetingMinutesService = {
         file_name,
         file_path,
         uploaded_at,
-        meetings!inner (
+        meetings!meeting_minutes_meeting_id_fkey!inner (
           facility_id,
           meeting_type,
           target_month,

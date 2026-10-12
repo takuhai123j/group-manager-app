@@ -7,6 +7,7 @@ import { parseTargetMonth, buildTargetMonth } from '@/lib/meetingPlan'
 
 // JOIN を含む SELECT フィールド定義
 // meeting_minutes(count) は行を取得せず件数のみ取得する PostgREST の集計構文
+// （所有者FK meeting_minutes_meeting_id_fkey 経由と明示し、他の経路が増えても埋め込みが曖昧にならないようにする）
 // schedules(...) は日程確定済みの場合の実施予定日・時間・担当者（G長・主任 or リーダー）を
 // 年間計画UI/ダッシュボードに表示し、「予定を保存」フォームの初期値に使うためのJOIN
 const SELECT_WITH_JOINS = `
@@ -22,7 +23,7 @@ const SELECT_WITH_JOINS = `
   created_at,
   updated_at,
   facilities ( name ),
-  meeting_minutes ( count ),
+  meeting_minutes!meeting_minutes_meeting_id_fkey ( count ),
   schedules (
     date, start_time, end_time, is_all_day,
     group_manager_id, group_managers ( name, color ),

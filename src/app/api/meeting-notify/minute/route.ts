@@ -76,11 +76,12 @@ export async function POST(request: NextRequest) {
   let completed = false
   try {
     // 2) メール内容をDBの最新状態から組み立てる
+    //    meetings は所有者FK（meeting_minutes.meeting_id）経由と明示する（他の経路が増えても曖昧にしない）
     const { data, error } = await supabase
       .from('meeting_minutes')
       .select(`
         id, file_name, file_path,
-        meetings (
+        meetings!meeting_minutes_meeting_id_fkey (
           meeting_type, target_month, executed_date,
           facilities ( name ),
           schedules ( group_managers ( name ), staff_members ( name ) )
