@@ -635,8 +635,69 @@ export type Database = {
     Views: {
       [_ in never]: never
     }
+    // MT同時開催のRPC（SECURITY INVOKER・anonのみ実行可）。
+    // 失敗時は 'MTJ_<コード>: <メッセージ>' 形式のエラーを返す
     Functions: {
-      [_ in never]: never
+      mt_join_meetings: {
+        Args: {
+          p_meeting_id: string
+          p_partner_id: string
+          p_keep_schedule_id?: string | null
+          p_delete_schedule_id?: string | null
+          p_executed_date?: string | null
+        }
+        Returns: string // group_id
+      }
+      mt_confirm_joint_schedule: {
+        Args: {
+          p_group_id: string
+          p_date: string
+          p_start_time?: string
+          p_end_time?: string
+          p_is_all_day?: boolean
+          p_group_manager_id?: string | null
+          p_staff_member_id?: string | null
+          p_memo?: string
+        }
+        Returns: string // schedule_id
+      }
+      mt_mark_joint_done: {
+        Args: {
+          p_group_id: string
+          p_executed_date: string
+        }
+        Returns: undefined
+      }
+      mt_leave_joint: {
+        Args: {
+          p_group_id: string
+          p_keep_meeting_id: string
+        }
+        Returns: string | null // 外れる側に複製した schedule_id（予定未定なら null）
+      }
+      mt_create_joint_meetings: {
+        Args: {
+          p_facility_id: string
+          p_meeting_type: 'facility' | 'kitchen'
+          p_target_month: string
+          p_memo?: string
+          p_partner_id?: string | null
+          p_partner_target_month?: string | null
+          p_schedule_date?: string | null
+          p_start_time?: string
+          p_end_time?: string
+          p_is_all_day?: boolean
+          p_group_manager_id?: string | null
+          p_staff_member_id?: string | null
+        }
+        Returns: {
+          meeting_id: string
+          partner_id: string
+          group_id: string
+          schedule_id: string | null
+          schedule_created: boolean
+        }
+      }
     }
     Enums: {
       [_ in never]: never
