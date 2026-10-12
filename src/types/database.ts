@@ -429,6 +429,8 @@ export type Database = {
           // 通知管理列（更新は通知API Route側のみ。クライアントからは更新しない）
           schedule_notified_at: string | null
           schedule_notify_claimed_at: string | null
+          // 同時開催グループ（NULL = 単独開催）
+          joint_group_id: string | null
         }
         Insert: {
           id?: string
@@ -442,6 +444,7 @@ export type Database = {
           memo?: string
           created_at?: string
           updated_at?: string
+          joint_group_id?: string | null
         }
         Update: {
           id?: string
@@ -456,6 +459,7 @@ export type Database = {
           updated_at?: string
           schedule_notified_at?: string | null
           schedule_notify_claimed_at?: string | null
+          joint_group_id?: string | null
         }
         Relationships: [
           {
@@ -477,6 +481,72 @@ export type Database = {
             columns: ['schedule_id']
             isOneToOne: false
             referencedRelation: 'schedules'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'meetings_joint_group_facility_fkey'
+            columns: ['joint_group_id', 'facility_id']
+            isOneToOne: false
+            referencedRelation: 'meeting_joint_groups'
+            referencedColumns: ['id', 'facility_id']
+          },
+        ]
+      }
+      // 同時開催グループ（同一施設の施設MT＋厨房MT）。anon は SELECT/INSERT/DELETE のみ（UPDATE不可）
+      meeting_joint_groups: {
+        Row: {
+          id: string
+          facility_id: string
+          memo: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          facility_id: string
+          memo?: string
+          created_at?: string
+        }
+        Update: {
+          [_ in never]: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'meeting_joint_groups_facility_id_fkey'
+            columns: ['facility_id']
+            isOneToOne: false
+            referencedRelation: 'facilities'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      // 議事録PDF ⇔ MT の紐付け（1PDFを複数MTで共有）。anon は SELECT/INSERT/DELETE のみ（UPDATE不可）
+      meeting_minute_links: {
+        Row: {
+          minute_id: string
+          meeting_id: string
+          created_at: string
+        }
+        Insert: {
+          minute_id: string
+          meeting_id: string
+          created_at?: string
+        }
+        Update: {
+          [_ in never]: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'meeting_minute_links_minute_id_fkey'
+            columns: ['minute_id']
+            isOneToOne: false
+            referencedRelation: 'meeting_minutes'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'meeting_minute_links_meeting_id_fkey'
+            columns: ['meeting_id']
+            isOneToOne: false
+            referencedRelation: 'meetings'
             referencedColumns: ['id']
           },
         ]
