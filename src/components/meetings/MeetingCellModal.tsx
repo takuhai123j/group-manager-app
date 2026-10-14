@@ -415,7 +415,9 @@ export function MeetingCellModal({
     setMinutesNotice(null)
     try {
       const { minute: created, notification } = await onUploadMinute(meeting, file)
-      setMinutes(prev => [created, ...prev])
+      // アップロード後の年間計画の再読込で meeting が更新され、一覧はDBから取り直される（新しいPDFを含む）。
+      // その取り直しと競合しても同じPDFが2行にならないよう、同じIDの行を除いてから先頭に入れる
+      setMinutes(prev => [created, ...prev.filter(m => m.id !== created.id)])
       if (notification === 'failed') {
         setMinutesNotice({ kind: 'warning', message: '議事録の保存は完了しましたが、通知メールの送信に失敗しました' })
       } else if (notification === 'sent') {
