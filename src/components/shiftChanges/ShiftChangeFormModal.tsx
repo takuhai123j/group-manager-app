@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Save, Trash2, Plus, Minus, CheckSquare, Link2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, toDateString } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
 import type {
   ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeType,
@@ -228,7 +228,8 @@ export function ShiftChangeFormModal({
           : [{ ...EMPTY_DETAIL }]
       )
     } else {
-      const today = new Date().toISOString().slice(0, 10)
+      // 端末の現地日付（toISOString は UTC のため、日本時間の0〜9時は前日になる）
+      const today = toDateString(new Date())
       setDateMode('single')
       setForm({ ...EMPTY_FORM, targetDate: today })
       setDetails([{ ...EMPTY_DETAIL }])
