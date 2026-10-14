@@ -244,7 +244,7 @@ async function releaseClaims(supabase: ReturnType<typeof createServerSupabase>, 
 }
 
 // 同時開催の予定確定メール。施設MT・厨房MTの両方の種別を件名・本文に載せる。
-// 計画月・メモは2件で異なる場合があるため、異なる場合だけ種別ごとに並べる
+// 計画月・メモは2件で異なる場合があるため、異なる場合だけ種別ごとに分けて表示する
 function buildJointScheduleMail(members: JointMemberForMail[]): { subject: string; text: string } {
   const s = members[0].schedules!
   const facilityName = members[0].facilities?.name ?? '（施設不明）'
@@ -257,12 +257,17 @@ function buildJointScheduleMail(members: JointMemberForMail[]): { subject: strin
     ? months[0]
     : members.map((m, i) => `${MEETING_TYPE_LABELS[m.meeting_type]} ${months[i]}`).join('／')
 
+  // メモ：両方なし →「（なし）」、同じ内容 → 1行、片方だけ →「メモ（施設MT）：…」、
+  // 両方あり・内容が違う → 種別ごとに1行ずつ（長いメモでも読みやすいよう「／」でつながない）
   const memos = members.map(m => m.memo?.trim() ?? '')
-  const memoText = memos.every(v => !v)
-    ? '（なし）'
-    : memos[0] === memos[1]
-      ? memos[0]
-      : members.filter((_, i) => memos[i]).map(m => `${MEETING_TYPE_LABELS[m.meeting_type]}：${m.memo.trim()}`).join('／')
+  const withMemo = members.map((m, i) => ({ label: MEETING_TYPE_LABELS[m.meeting_type], memo: memos[i] })).filter(x => x.memo)
+  const memoLines = withMemo.length === 0
+    ? ['メモ：（なし）']
+    : withMemo.length === 1
+      ? [`メモ（${withMemo[0].label}）：${withMemo[0].memo}`]
+      : memos[0] === memos[1]
+        ? [`メモ：${memos[0]}`]
+        : ['メモ：', ...withMemo.map(x => `　${x.label}：${x.memo}`)]
 
   const subject = `【MT予定登録】${facilityName}／${typeLabels}（同時開催）／${formatMonthDay(s.date)}`
   const text = [
@@ -274,7 +279,7 @@ function buildJointScheduleMail(members: JointMemberForMail[]): { subject: strin
     `実施予定日：${formatDateJpFull(s.date)}`,
     `時間：${timeText}`,
     `計画月：${monthText}`,
-    `メモ：${memoText}`,
+    ...memoLines,
   ].join('\n')
   return { subject, text }
 }
