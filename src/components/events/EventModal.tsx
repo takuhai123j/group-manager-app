@@ -176,6 +176,22 @@ export function EventModal({
     return allFacilities.find(f => f.id === form.facilityId)?.name ?? ''
   }
 
+  // 休日出勤は施設を選んだ時点でタイトル欄に「施設名／休日出勤」を入れる（編集可）。
+  // タイトルが空、または前回自動入力した値のままのときだけ書き換え、手で直したタイトルは上書きしない
+  const holidayWorkTitle = (facilityId: string): string => {
+    const name = allFacilities.find(f => f.id === facilityId)?.name
+    return name ? buildAutoTitle('holiday_work', name) : ''
+  }
+
+  const handleFacilityChange = (facilityId: string) => {
+    setForm(prev => {
+      const isAutoTitle = prev.title === '' || prev.title === holidayWorkTitle(prev.facilityId)
+      const title = prev.type === 'holiday_work' && isAutoTitle ? holidayWorkTitle(facilityId) : prev.title
+      return { ...prev, facilityId, title }
+    })
+    setErrors(prev => ({ ...prev, facilityId: undefined }))
+  }
+
   const resolveTitle = (): string => {
     const trimmed = form.title.trim()
     return trimmed || buildAutoTitle(form.type, resolveFacilityName())
@@ -279,12 +295,20 @@ export function EventModal({
         startTime = `${String(clampedH).padStart(2, '0')}:${String(m).padStart(2, '0')}`
         endTime = computeHalfDayEndTime(startTime)
       }
+      let title = shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title
+      const holidayAuto = holidayWorkTitle(prev.facilityId)
+      if (type === 'holiday_work' && (prev.title === '' || autoTitleLabels.includes(prev.title))) {
+        title = holidayAuto
+      } else if (prev.type === 'holiday_work' && type !== 'holiday_work' && holidayAuto && prev.title === holidayAuto) {
+        // 休日出勤から別の種別に変えたら、自動入力したタイトルは外す（保存時に新しい種別で自動入力される）
+        title = isAllDayType(type) || isHalfDayType(type) ? (newConfig?.label ?? '') : ''
+      }
       return {
         ...prev,
         type,
         startTime,
         endTime,
-        title: shouldAutoFill ? (newConfig?.label ?? prev.title) : prev.title,
+        title,
       }
     })
     setErrors(prev => ({ ...prev, type: undefined, title: undefined }))
@@ -724,7 +748,7 @@ export function EventModal({
               </div>
               <select
                 value={form.facilityId}
-                onChange={e => set('facilityId', e.target.value)}
+                onChange={e => handleFacilityChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
                 <option value="">（未設定）</option>

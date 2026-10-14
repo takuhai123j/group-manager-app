@@ -7,6 +7,7 @@ export type EventType =
   | 'vacancy'       // 欠員対応
   | 'office'        // 事務作業
   | 'trouble'       // トラブル対応
+  | 'holiday_work'  // 休日出勤
   | 'kyukyu'        // 公休（全日）
   | 'yukyu'         // 有休（全日）
   | 'hankyuu'       // 半休（時間指定・4時間）
@@ -152,7 +153,7 @@ export type StaffMemberInput = {
 }
 
 export const SHIFT_CHANGE_TYPES = [
-  '欠勤', '遅刻', '早退', '時間変更', '交代出勤', '振休', 'その他',
+  '欠勤', '遅刻', '早退', '時間変更', '交代出勤', '休日出勤', '振休', 'その他',
 ] as const
 
 export type ShiftChangeType = typeof SHIFT_CHANGE_TYPES[number]

@@ -5,6 +5,8 @@ const config: Config = {
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    // 予定種別の色（EVENT_TYPES）はここで定義しているため、クラスを漏れなく生成する
+    "./src/constants/**/*.{js,ts}",
   ],
   theme: {
     extend: {

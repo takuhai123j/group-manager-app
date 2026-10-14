@@ -27,9 +27,10 @@ interface Props {
 const CHANGE_TYPE_COLORS: Record<string, string> = {
   欠勤: 'bg-red-100 text-red-700',
   遅刻: 'bg-orange-100 text-orange-700',
-  早退: 'bg-yellow-100 text-yellow-700',
+  早退: 'bg-lime-100 text-lime-800',
   時間変更: 'bg-purple-100 text-purple-700',
   交代出勤: 'bg-blue-100 text-blue-700',
+  休日出勤: 'bg-amber-100 text-amber-800',
   振休: 'bg-indigo-100 text-indigo-700',
   その他: 'bg-gray-100 text-gray-700',
   // 旧データ互換
