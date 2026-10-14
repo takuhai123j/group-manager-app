@@ -288,10 +288,20 @@ export interface Meeting {
   scheduleAssignee: MeetingAssignee | null // 日程確定済みの場合の担当者（G長・主任 or リーダー）
   status: MeetingStatus
   executedDate: string | null
-  minutesCount: number       // meeting_minutes の件数（表示ステータス導出用）
+  minutesCount: number       // このMTに紐付く議事録の件数（共有PDFを含む。表示ステータス導出用）
   memo: string
   createdAt: string
   updatedAt: string
+  jointGroupId: string | null          // 同時開催グループ（null = 単独開催）
+  jointPartner: MeetingJointPartner | null // 同時開催の相手MT（jointGroupId がある場合のみ）
+}
+
+// 同時開催の相手MTの概要（相手のMTは計画月・年が異なる場合がある）
+export type MeetingJointPartner = {
+  id: string
+  meetingType: MeetingType
+  targetMonth: string
+  status: MeetingStatus
 }
 
 // MTの担当者。G長・主任（group_managers）とリーダー（staff_members）を
@@ -338,11 +348,12 @@ export type UpdateMeetingInput = {
 
 export interface MeetingMinute {
   id: string
-  meetingId: string
+  meetingId: string          // アップロード元（所有者）のMT
   fileName: string
   filePath: string
   uploadedAt: string
   memo: string | null
+  isShared: boolean          // 同時開催などで2件以上のMTに紐付いている（削除すると全てのMTから消える）
 }
 
 export type CreateMeetingMinuteInput = {
@@ -352,7 +363,7 @@ export type CreateMeetingMinuteInput = {
   memo?: string | null
 }
 
-// 施設ごとの議事録履歴一覧（MeetingMinute + 親meetingの情報を1行に展開したもの）
+// 施設ごとの議事録履歴一覧（議事録PDF 1件 = 1行。親meetingは所有者MTの情報を展開したもの）
 export interface MeetingMinuteHistoryItem {
   id: string
   meetingId: string
@@ -364,12 +375,68 @@ export interface MeetingMinuteHistoryItem {
   fileName: string
   filePath: string
   uploadedAt: string
+  // 紐付いているMTの種別（同時開催で共有している場合は施設MT・厨房内MTの両方）
+  meetingTypes: MeetingType[]
+  isShared: boolean
 }
 
 export type MeetingMinuteHistoryFilters = {
   facilityId?: string
   meetingType?: MeetingType
   year?: number
+}
+
+// ── MT同時開催 ───────────────────────────────────────────────
+// DBのRPC（mt_*）が返すエラーコード（'MTJ_<コード>: <メッセージ>' の <コード> 部分）
+export type MeetingJointErrorCode =
+  | 'MTJ_INVALID_INPUT'
+  | 'MTJ_NOT_FOUND'
+  | 'MTJ_FACILITY_MISMATCH'
+  | 'MTJ_SAME_TYPE'
+  | 'MTJ_ALREADY_JOINED'
+  | 'MTJ_YEAR_RANGE'
+  | 'MTJ_SCHEDULE_CHOICE_REQUIRED'
+  | 'MTJ_SCHEDULE_DELETE_DENIED'
+  | 'MTJ_EXECUTED_DATE_REQUIRED'
+  | 'MTJ_EXECUTED_DATE_INVALID'
+  | 'MTJ_ALREADY_SCHEDULED'
+  | 'MTJ_MONTH_TAKEN'
+  | 'MTJ_INCOMPLETE_GROUP'
+  | 'MTJ_GROUP_INCONSISTENT'
+
+// 既存MT同士の結合時に利用者が選ぶ内容
+//   keepScheduleId / deleteScheduleId: 2件とも予定がある場合のみ必須（削除への同意）
+//   executedDate: どちらかが実施済みの場合のみ必須（実施済み側の実施日から選ぶ）
+export type JoinMeetingsOptions = {
+  keepScheduleId?: string
+  deleteScheduleId?: string
+  executedDate?: string
+}
+
+// 結合前に、利用者に選んでもらう必要がある項目（画面の段階式フォーム用）
+export type JoinRequirements = {
+  scheduleChoice: { scheduleIds: [string, string] } | null // 2件とも別の予定がある
+  executedDateChoice: { dates: string[] } | null           // 実施済みの日付候補（1件なら確認のみ）
+  partnerWillBeMarkedDone: boolean                         // 片方だけ実施済み → 両方実施済みになる
+}
+
+// 新規登録と同時に同時開催にする（相手は既存MT or 新規作成）
+export type CreateJointMeetingsInput = {
+  facilityId: string
+  meetingType: MeetingType
+  targetMonth: string
+  memo?: string
+  partnerId?: string            // 既存MTを相手にする場合
+  partnerTargetMonth?: string   // 相手を新規作成する場合の計画月（省略時は同じ月）
+  schedule?: CreateManualMeetingScheduleInput // 日時未定なら省略
+}
+
+export type CreateJointMeetingsResult = {
+  meetingId: string
+  partnerId: string
+  groupId: string
+  scheduleId: string | null
+  scheduleCreated: boolean      // true の場合だけ予定確定通知の対象
 }
 
 // MTの日程確定（meetings.schedule_id が未設定の場合のみ使用可）

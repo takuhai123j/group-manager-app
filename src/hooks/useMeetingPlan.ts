@@ -5,10 +5,12 @@ import { meetingService } from '@/services/meetingService'
 import { meetingFrequencyService } from '@/services/meetingFrequencyService'
 import { meetingScheduleService } from '@/services/meetingScheduleService'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
+import { meetingJointService } from '@/services/meetingJointService'
 import { meetingNotifyService, type MeetingNotifyResult, type MeetingNotifyStatus } from '@/services/meetingNotifyService'
 import type {
   Meeting, MeetingFrequency, MeetingFrequencyInput, MeetingMinute,
   CreateManualMeetingWithScheduleInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
+  JoinMeetingsOptions, CreateJointMeetingsInput, CreateJointMeetingsResult,
 } from '@/lib/types'
 
 // MT年間計画画面向けのデータ取得・操作をまとめたフック。
@@ -63,8 +65,10 @@ export function useMeetingPlan(year: number) {
   }, [reloadSilently])
 
   const confirmSchedule = useCallback(async (meetingId: string, input: ConfirmMeetingScheduleInput): Promise<MeetingNotifyResult> => {
-    await meetingScheduleService.confirmSchedule(meetingId, input)
+    const confirmed = await meetingScheduleService.confirmSchedule(meetingId, input)
     await reloadSilently()
+    // 同時開催の共通予定は、通知APIがグループ単位（1通）に対応するまで送らない（第2段階D で対応）
+    if (confirmed.jointGroupId) return {}
     const notification = await meetingNotifyService.notifyScheduleConfirmed(meetingId)
     return { notification }
   }, [reloadSilently])
@@ -135,6 +139,32 @@ export function useMeetingPlan(year: number) {
     await reloadSilently()
   }, [reloadSilently])
 
+  // ── MT同時開催 ──────────────────────────────────────────────
+  // 結合・解除は通知を送らない（過去のMTを結合しても再送しない）。
+  // 新規登録で共通予定を作成した場合の通知は、通知APIのグループ対応（第2段階D）で追加する
+
+  const getJoinCandidates = useCallback((meeting: Meeting): Promise<Meeting[]> => {
+    return meetingJointService.getJoinCandidates(meeting)
+  }, [])
+
+  const joinMeetings = useCallback(async (meetingId: string, partnerId: string, options?: JoinMeetingsOptions): Promise<Meeting> => {
+    const joined = await meetingJointService.join(meetingId, partnerId, options)
+    await reloadSilently()
+    return joined
+  }, [reloadSilently])
+
+  const createJointMeetings = useCallback(async (input: CreateJointMeetingsInput): Promise<CreateJointMeetingsResult> => {
+    const result = await meetingJointService.createJoint(input)
+    await reloadSilently()
+    return result
+  }, [reloadSilently])
+
+  const leaveJoint = useCallback(async (meeting: Meeting, keepMeetingId?: string): Promise<Meeting> => {
+    const left = await meetingJointService.leave(meeting, keepMeetingId)
+    await reloadSilently()
+    return left
+  }, [reloadSilently])
+
   return {
     meetings,
     frequencies,
@@ -153,5 +183,9 @@ export function useMeetingPlan(year: number) {
     moveTargetMonth,
     moveTargetMonthCascade,
     deleteMeeting,
+    getJoinCandidates,
+    joinMeetings,
+    createJointMeetings,
+    leaveJoint,
   }
 }

@@ -4,6 +4,7 @@ import { meetingService } from '@/services/meetingService'
 import { meetingAssigneeService } from '@/services/meetingAssigneeService'
 import { isSameAssignee } from '@/lib/meetingAssignee'
 import { buildMeetingScheduleTitle } from '@/constants/eventTypes'
+import { toMeetingJointError } from '@/lib/meetingJoint'
 import type {
   Meeting, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
   CreateManualMeetingWithScheduleInput, MeetingAssigneeRef,
@@ -52,6 +53,7 @@ export const meetingScheduleService = {
   // 日程確定: schedules に新規作成し、meetings.schedule_id に紐付ける
   // meeting.schedule_id が既に存在する場合は二重作成を防ぐため必ずエラーにする
   // （日程変更は rescheduleMeeting を使用する）
+  // 同時開催中のMTは、相手と共通の予定を1件だけ作成して両方に紐付ける（RPCで1トランザクション）
   async confirmSchedule(meetingId: string, input: ConfirmMeetingScheduleInput): Promise<Meeting> {
     const meeting = await meetingService.getById(meetingId)
     if (meeting.scheduleId) {
@@ -60,6 +62,22 @@ export const meetingScheduleService = {
 
     const assignee = await resolveAssignee(meeting.facilityId, input.assignee)
     const isAllDay = input.isAllDay ?? false
+
+    if (meeting.jointGroupId) {
+      const supabase = createClient()
+      const { error } = await supabase.rpc('mt_confirm_joint_schedule', {
+        p_group_id: meeting.jointGroupId,
+        p_date: input.date,
+        p_start_time: isAllDay ? '00:00' : (input.startTime ?? '10:00'),
+        p_end_time: isAllDay ? '00:00' : (input.endTime ?? '11:00'),
+        p_is_all_day: isAllDay,
+        p_group_manager_id: assignee.type === 'group_manager' ? assignee.id : null,
+        p_staff_member_id: assignee.type === 'staff_member' ? assignee.id : null,
+        p_memo: input.memo ?? '',
+      })
+      if (error) throw toMeetingJointError(error)
+      return meetingService.getById(meetingId)
+    }
     const title = buildMeetingScheduleTitle(meeting.meetingType, meeting.facilityName)
 
     const schedule = await scheduleService.create({
@@ -87,6 +105,7 @@ export const meetingScheduleService = {
   },
 
   // 日程変更: 既存 schedules をUPDATEするのみ。meetings.target_month は変更しない
+  // （同時開催中は2件が同じ schedules 行を共有しているため、相手のMTの日程も同時に変わる）
   async rescheduleMeeting(meetingId: string, input: RescheduleMeetingInput): Promise<Meeting> {
     const meeting = await meetingService.getById(meetingId)
     if (!meeting.scheduleId) {
@@ -113,6 +132,7 @@ export const meetingScheduleService = {
   // 日程取消: schedules 行をDELETEする（meetings.schedule_id は ON DELETE SET NULL により
   // DB側で自動的にNULLへ戻る。schedule_id=NULLへの更新だけでは孤児scheduleが
   // カレンダー上に残ってしまうため、必ずschedules側から削除する）
+  // 同時開催中は共有の予定を削除するため、相手のMTも日程未定に戻る（同時開催自体は維持される）
   async cancelSchedule(meetingId: string): Promise<Meeting> {
     const meeting = await meetingService.getById(meetingId)
     if (!meeting.scheduleId) {

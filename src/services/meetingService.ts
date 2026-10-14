@@ -1,13 +1,16 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/database'
 import type {
-  Meeting, MeetingAssignee, MeetingType, CreateManualMeetingInput, UpdateMeetingInput,
+  Meeting, MeetingAssignee, MeetingJointPartner, MeetingType, CreateManualMeetingInput, UpdateMeetingInput,
 } from '@/lib/types'
+import { toMeetingJointError } from '@/lib/meetingJoint'
 import { parseTargetMonth, buildTargetMonth } from '@/lib/meetingPlan'
 
 // JOIN を含む SELECT フィールド定義
-// meeting_minutes(count) は行を取得せず件数のみ取得する PostgREST の集計構文
-// （所有者FK meeting_minutes_meeting_id_fkey 経由と明示し、他の経路が増えても埋め込みが曖昧にならないようにする）
+// meeting_minute_links(count) は行を取得せず件数のみ取得する PostgREST の集計構文。
+// 同時開催で共有している議事録も含めるため、所有者FKではなく紐付け表（meeting_minute_links）で数える
+// （単独MTの議事録には所有者リンクが必ずあるため、件数は従来と同じ）
+// meeting_joint_groups(meetings(...)) は同時開催の相手MT（自分自身も含めて返るため toMeeting で除外する）
 // schedules(...) は日程確定済みの場合の実施予定日・時間・担当者（G長・主任 or リーダー）を
 // 年間計画UI/ダッシュボードに表示し、「予定を保存」フォームの初期値に使うためのJOIN
 const SELECT_WITH_JOINS = `
@@ -22,8 +25,10 @@ const SELECT_WITH_JOINS = `
   memo,
   created_at,
   updated_at,
+  joint_group_id,
   facilities ( name ),
-  meeting_minutes!meeting_minutes_meeting_id_fkey ( count ),
+  meeting_minute_links ( count ),
+  meeting_joint_groups ( meetings ( id, meeting_type, target_month, status ) ),
   schedules (
     date, start_time, end_time, is_all_day,
     group_manager_id, group_managers ( name, color ),
@@ -43,8 +48,12 @@ type MeetingRow = {
   memo: string
   created_at: string
   updated_at: string
+  joint_group_id: string | null
   facilities: { name: string } | null
-  meeting_minutes: { count: number }[] | null
+  meeting_minute_links: { count: number }[] | null
+  meeting_joint_groups: {
+    meetings: { id: string; meeting_type: 'facility' | 'kitchen'; target_month: string; status: 'scheduled' | 'done' }[]
+  } | null
   schedules: {
     date: string
     start_time: string
@@ -79,6 +88,18 @@ function toScheduleAssignee(schedule: MeetingRow['schedules']): MeetingAssignee 
   return null
 }
 
+function toJointPartner(row: MeetingRow): MeetingJointPartner | null {
+  if (!row.joint_group_id) return null
+  const partner = row.meeting_joint_groups?.meetings.find(m => m.id !== row.id)
+  if (!partner) return null
+  return {
+    id: partner.id,
+    meetingType: partner.meeting_type,
+    targetMonth: partner.target_month,
+    status: partner.status,
+  }
+}
+
 function toMeeting(row: MeetingRow): Meeting {
   return {
     id: row.id,
@@ -97,10 +118,12 @@ function toMeeting(row: MeetingRow): Meeting {
     scheduleAssignee: toScheduleAssignee(row.schedules),
     status: row.status,
     executedDate: row.executed_date,
-    minutesCount: row.meeting_minutes?.[0]?.count ?? 0,
+    minutesCount: row.meeting_minute_links?.[0]?.count ?? 0,
     memo: row.memo,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    jointGroupId: row.joint_group_id,
+    jointPartner: toJointPartner(row),
   }
 }
 
@@ -172,6 +195,25 @@ export const meetingService = {
     return (data ?? []).map(row => toMeeting(row as unknown as MeetingRow))
   },
 
+  // 同時開催の結合相手の候補: 同じ施設・もう一方のMT種別・未結合で、
+  // 計画月が前年・当年・翌年のもの（DB側の mt_join_meetings も年の差1年以内に制限している）
+  async getJoinCandidates(meeting: Meeting): Promise<Meeting[]> {
+    const supabase = createClient()
+    const year = Number(meeting.targetMonth.slice(0, 4))
+    const otherType: MeetingType = meeting.meetingType === 'facility' ? 'kitchen' : 'facility'
+    const { data, error } = await supabase
+      .from('meetings')
+      .select(SELECT_WITH_JOINS)
+      .eq('facility_id', meeting.facilityId)
+      .eq('meeting_type', otherType)
+      .is('joint_group_id', null)
+      .gte('target_month', `${year - 1}-01-01`)
+      .lt('target_month', `${year + 2}-01-01`)
+      .order('target_month', { ascending: true })
+    if (error) throw error
+    return (data ?? []).map(row => toMeeting(row as unknown as MeetingRow))
+  },
+
   // 手動追加（frequency_id は常に null = 年間計画の自動再生成の対象外）
   async addManual(input: CreateManualMeetingInput): Promise<Meeting> {
     const supabase = createClient()
@@ -213,12 +255,14 @@ export const meetingService = {
   //   - schedule_id が設定済み かつ executedDate 未指定 → schedules.date を実施日とする
   //   - schedule_id が未設定（日程未確定） → executedDate の明示指定を必須とする
   // 「今日の日付」を勝手に補完すると実施日の記録として不正確になるため行わない
+  //
+  // 同時開催中のMTは、相手のMTも同じ実施日で実施済みにする（RPCで2件を1回のUPDATEで更新）
   async markDone(id: string, executedDate?: string): Promise<Meeting> {
     const supabase = createClient()
+    const meeting = await meetingService.getById(id)
 
     let resolvedExecutedDate = executedDate
     if (!resolvedExecutedDate) {
-      const meeting = await meetingService.getById(id)
       if (!meeting.scheduleId) {
         throw new Error('日程が未確定のMTは実施日(executedDate)を指定してください')
       }
@@ -229,6 +273,15 @@ export const meetingService = {
         .single()
       if (scheduleError || !schedule) throw scheduleError ?? new Error('連携先の予定が見つかりません')
       resolvedExecutedDate = schedule.date
+    }
+
+    if (meeting.jointGroupId) {
+      const { error: rpcError } = await supabase.rpc('mt_mark_joint_done', {
+        p_group_id: meeting.jointGroupId,
+        p_executed_date: resolvedExecutedDate,
+      })
+      if (rpcError) throw toMeetingJointError(rpcError)
+      return meetingService.getById(id)
     }
 
     const { data, error } = await supabase
@@ -335,13 +388,15 @@ export const meetingService = {
     const existing = (existingRows ?? []).map(row => toMeeting(row as unknown as MeetingRow))
     const existingMonthSet = new Set(existing.map(m => m.targetMonth))
 
-    // 削除可能: 自動生成行 かつ 日程未確定 かつ 未実施 かつ 議事録なし かつ 新パターン外
+    // 削除可能: 自動生成行 かつ 日程未確定 かつ 未実施 かつ 議事録なし かつ 同時開催なし かつ 新パターン外
+    // （同時開催中のMTは利用者が明示的に結合したものなので、日程未定でも自動では消さない）
     const deletableIds = existing
       .filter(m =>
         m.frequencyId === frequencyId &&
         m.scheduleId === null &&
         m.status === 'scheduled' &&
         m.minutesCount === 0 &&
+        m.jointGroupId === null &&
         !newTargetMonthSet.has(m.targetMonth)
       )
       .map(m => m.id)
@@ -432,7 +487,8 @@ export const meetingService = {
   //   ・schedule_id が NULL（日程未確定）
   //   ・status が 'scheduled'（未実施）
   //   ・meeting_minutes が存在しない（議事録なし）
-  // 上記を満たさない行（日程確定済・実施済・議事録あり・手動追加・今回より前）は
+  //   ・同時開催に設定されていない
+  // 上記を満たさない行（日程確定済・実施済・議事録あり・手動追加・同時開催・今回より前）は
   // 対象から除外し、絶対に変更しない。
   //
   // 移動前に全移動先の重複チェックを行い、1件でも衝突があれば
@@ -465,7 +521,9 @@ export const meetingService = {
       if (candErr) throw candErr
       candidates = (candidateRows ?? [])
         .map(row => toMeeting(row as unknown as MeetingRow))
-        .filter(m => m.scheduleId === null && m.status === 'scheduled' && m.minutesCount === 0)
+        .filter(m =>
+          m.scheduleId === null && m.status === 'scheduled' && m.minutesCount === 0 && m.jointGroupId === null
+        )
     }
 
     // 移動先を計算
@@ -513,10 +571,13 @@ export const meetingService = {
   },
 
   // この月の予定（meeting 1件）を削除する。meeting_frequenciesは変更しない。
-  // 削除できるのは 日程未確定・未実施・議事録なし の場合のみ。
+  // 削除できるのは 日程未確定・未実施・議事録なし・同時開催なし の場合のみ。
   async deleteIfSafe(id: string): Promise<void> {
     const supabase = createClient()
     const meeting = await meetingService.getById(id)
+    if (meeting.jointGroupId !== null) {
+      throw new Error('同時開催に設定されているMTは削除できません。先に同時開催を解除してください')
+    }
     if (meeting.scheduleId !== null) {
       throw new Error('日程確定済みのMTは削除できません。先に日程を取り消してください')
     }
