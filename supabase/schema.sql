@@ -284,9 +284,9 @@ ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_assignee_exactly_one;
 ALTER TABLE schedules ADD CONSTRAINT schedules_assignee_exactly_one
   CHECK (num_nonnulls(group_manager_id, staff_member_id) = 1);
 
+-- スタッフ（リーダー・ラウンダー・現場社員）は全種別の予定の担当にできる
+-- （以前の「スタッフ担当はMTのみ」の制約は 20261014120000_schedules_staff_assignee_all_types で削除）
 ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_staff_assignee_mt_only;
-ALTER TABLE schedules ADD CONSTRAINT schedules_staff_assignee_mt_only
-  CHECK (staff_member_id IS NULL OR type = 'mt');
 
 -- -------------------------------------------------------
 -- Meeting Frequencies（施設ごとのMT頻度設定）

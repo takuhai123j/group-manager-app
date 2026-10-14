@@ -51,10 +51,10 @@ export interface ScheduleEvent {
   type: EventType
   isAllDay: boolean           // 全日予定フラグ（公休・有休など）
   memo: string
-  groupLeaderId: string       // G長・主任の担当ID（リーダー担当の予定では ''）
+  groupLeaderId: string       // G長・主任の担当ID（スタッフ担当の予定では ''）
   groupLeaderName: string     // 表示用の担当者名（G長・主任、なければリーダーの名前）
-  staffMemberId: string | null     // リーダー担当の予定のみ（当面MTのみ）。G長・主任の予定では null
-  staffMemberColor: string | null  // リーダー担当の予定の表示色（JOINで取得）
+  staffMemberId: string | null     // スタッフ（リーダー・ラウンダー・現場社員）担当の予定のみ。G長・主任の予定では null
+  staffMemberColor: string | null  // スタッフ担当の予定の表示色（JOINで取得）
   createdAt: string
   updatedAt: string
 }
@@ -69,7 +69,7 @@ export type CreateEventInput = {
   isAllDay: boolean
   memo: string
   groupLeaderId: string
-  // リーダー担当にする場合のみ指定（当面MTのみ）。指定時は group_manager_id を NULL にする
+  // スタッフ（リーダー・ラウンダー・現場社員）担当にする場合のみ指定。指定時は group_manager_id を NULL にする
   staffMemberId?: string | null
 }
 

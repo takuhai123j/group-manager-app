@@ -90,8 +90,8 @@ export const HELP_CONTENT = {
         description: '対象日と開始・終了時刻を入力します。カレンダーで日付や時間帯を押してから開くと自動で入力されます。',
       },
       {
-        title: '担当G長・施設を選ぶ',
-        description: '担当のグループ長と、関連する施設を選択します。',
+        title: '担当・施設を選ぶ',
+        description: '担当者と、関連する施設を選択します。',
       },
       {
         title: 'メモを入力する',
@@ -119,8 +119,8 @@ export const HELP_CONTENT = {
         caution: '半休・半有休は時間指定が必須です。開始時刻の入力を忘れないようにしてください。',
       },
       {
-        title: '担当G長を選ぶ',
-        description: '休暇を取得するグループ長を選択します。',
+        title: '担当を選ぶ',
+        description: '休暇を取得する担当者を選択します。',
       },
     ],
     commonMistake: {

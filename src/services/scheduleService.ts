@@ -66,7 +66,7 @@ function toScheduleEvent(row: ScheduleRow): ScheduleEvent {
     isAllDay: row.is_all_day ?? false,
     memo: row.memo ?? '',
     groupLeaderId: row.group_manager_id ?? '',
-    // 表示用の担当者名：G長・主任の予定はG長名、リーダー担当の予定はリーダー名
+    // 表示用の担当者名：G長・主任の予定はG長名、スタッフ担当の予定はスタッフ名
     groupLeaderName: row.group_managers?.name ?? row.staff_members?.name ?? '',
     staffMemberId: row.staff_member_id ?? null,
     staffMemberColor: row.staff_members?.color ?? null,
@@ -120,7 +120,7 @@ export const scheduleService = {
     if (input.type !== undefined)         patch.type             = input.type
     if (input.isAllDay !== undefined)     patch.is_all_day       = input.isAllDay
     if (input.memo !== undefined)         patch.memo             = input.memo
-    // 担当者の変更は、G長・主任かリーダーのIDが明示的に渡された場合のみ。
+    // 担当者の変更は、G長・主任かスタッフ（リーダー・ラウンダー・現場社員）のIDが明示的に渡された場合のみ。
     // 両方の列を同じUPDATEで設定し直す（空文字だけが渡された場合は担当者に触れない）
     if (input.staffMemberId) {
       Object.assign(patch, toAssigneeColumns('', input.staffMemberId))
@@ -142,7 +142,7 @@ export const scheduleService = {
     if (inputs.length === 0) return []
     const supabase = createClient()
     const rows = inputs.map(input => ({
-      group_manager_id: input.groupLeaderId,
+      ...toAssigneeColumns(input.groupLeaderId, input.staffMemberId),
       facility_id: null,
       title: input.title,
       date: input.date,

@@ -339,22 +339,28 @@ export default function HomePage() {
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const isFilterActive = filters.types.length > 0 || filters.facilities.length > 0
 
+  // 担当候補・絞り込みに使うスタッフ（リーダー・ラウンダー・現場社員）。無効化済みも含む
+  const allStaffMembers = useMemo(
+    () => [...leaderMembers, ...rounderMembers, ...fieldEmployeeMembers],
+    [leaderMembers, rounderMembers, fieldEmployeeMembers]
+  )
+  const staffRoleById = useMemo(
+    () => new Map(allStaffMembers.map(s => [s.id, s.role])),
+    [allStaffMembers]
+  )
+
   // 職種タブ・人の絞り込み。
-  //   G長タブ    : G長・主任担当の予定のみ（リーダー担当のMTは含めない）
-  //   リーダータブ: リーダー担当の予定（当面MTのみ）を staff_member_id で照合
-  //   ラウンダー・現場社員: 予定データ未連携のため非表示
+  //   G長タブ              : G長・主任担当の予定のみ（スタッフ担当の予定は含めない）
+  //   リーダー・ラウンダー・現場社員タブ: その役職のスタッフ担当の予定を staff_member_id で照合
   const matchesPerson = useCallback((event: ScheduleEvent): boolean => {
     if (selectedRole === 'all') return true
     if (selectedRole === 'group_manager') {
       if (!event.groupLeaderId) return false
       return selectedPersonId === ALL_PERSON_ID || event.groupLeaderId === selectedPersonId
     }
-    if (selectedRole === 'leader') {
-      if (!event.staffMemberId) return false
-      return selectedPersonId === ALL_PERSON_ID || event.staffMemberId === selectedPersonId
-    }
-    return false
-  }, [selectedRole, selectedPersonId])
+    if (!event.staffMemberId || staffRoleById.get(event.staffMemberId) !== selectedRole) return false
+    return selectedPersonId === ALL_PERSON_ID || event.staffMemberId === selectedPersonId
+  }, [selectedRole, selectedPersonId, staffRoleById])
 
   const filteredEvents = useMemo(() => events.filter(event => {
     const personMatch = matchesPerson(event)
@@ -423,6 +429,10 @@ export default function HomePage() {
 
   const preselectedLeaderId =
     selectedRole === 'group_manager' && selectedPersonId !== ALL_PERSON_ID
+      ? selectedPersonId
+      : undefined
+  const preselectedStaffMemberId =
+    selectedRole !== 'all' && selectedRole !== 'group_manager' && selectedPersonId !== ALL_PERSON_ID
       ? selectedPersonId
       : undefined
 
@@ -596,8 +606,10 @@ export default function HomePage() {
         allFacilities={allFacilities}
         activeManagers={activeManagers}
         allManagers={managers}
+        staffMembers={allStaffMembers}
         managerFacilities={managerFacilities}
         preselectedLeaderId={preselectedLeaderId}
+        preselectedStaffMemberId={preselectedStaffMemberId}
         onClose={closeEventModal}
         onSave={handleSave}
         onSaveBulk={handleSaveBulk}
