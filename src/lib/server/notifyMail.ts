@@ -24,6 +24,26 @@ export function getDryRunMode(): DryRunMode | null {
   return v === 'ok' || v === 'fail' || v === 'attach-fail' ? v : null
 }
 
+// 開発環境での実メール送信テスト用（本番では無効）。
+//   MEETING_NOTIFY_TEST_LABEL=1 のとき、件名の先頭に【テスト送信】を付け、本文の冒頭にテストである旨を入れる
+const TEST_SUBJECT_PREFIX = '【テスト送信】'
+const TEST_BODY_NOTICE = [
+  '※これはMT通知機能のテスト送信です（テスト施設・架空の開催日を使用）。',
+  '　実際の予定・議事録ではありません。対応は不要です。',
+  '────────────────────',
+  '',
+].join('\n')
+
+export function isTestLabelEnabled(): boolean {
+  if (process.env.NODE_ENV === 'production') return false
+  return process.env.MEETING_NOTIFY_TEST_LABEL === '1'
+}
+
+function withTestLabel(mail: { subject: string; text: string }): { subject: string; text: string } {
+  if (!isTestLabelEnabled()) return mail
+  return { subject: `${TEST_SUBJECT_PREFIX}${mail.subject}`, text: `${TEST_BODY_NOTICE}${mail.text}` }
+}
+
 export function getMailConfig(): { config: MailConfig } | { error: string } {
   if (getDryRunMode()) {
     return { config: { apiKey: 'dry-run', to: ['dry-run@example.invalid'], from: 'dry-run@example.invalid' } }
@@ -43,6 +63,7 @@ export async function sendMail(
   mail: { subject: string; text: string; attachments?: MailAttachment[] },
   logTag: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  mail = { ...mail, ...withTestLabel(mail) }
   const dryRun = getDryRunMode()
   if (dryRun) {
     console.log(`[${logTag}] DRY RUN (${dryRun})`, JSON.stringify({
@@ -64,6 +85,13 @@ export async function sendMail(
     if (error) {
       console.error(`[${logTag}] Resend error:`, error)
       return { ok: false, error: String(error.message ?? error) }
+    }
+    if (isTestLabelEnabled()) {
+      // テスト送信の記録（宛先のアドレスは出さず、件数だけ）
+      console.log(`[${logTag}] TEST SENT`, JSON.stringify({
+        subject: mail.subject, recipients: config.to.length,
+        attachments: (mail.attachments ?? []).map(a => a.filename),
+      }))
     }
     return { ok: true }
   } catch (err) {
