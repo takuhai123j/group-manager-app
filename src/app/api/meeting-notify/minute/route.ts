@@ -6,6 +6,8 @@ import {
 } from '@/lib/server/notifyMail'
 
 // MT議事録保存通知（議事録PDF 1件につき1回）。
+// 同時開催で共有しているPDFも1件につき1通（notified_at は meeting_minutes 側にあるため、
+// 両方のMTに表示されていても1回だけ送る。後から結合しても再通知しない）。
 //
 // 呼び出し元はクライアントの議事録アップロード成功後（Storage保存・meeting_minutes登録の両方が成功した後）。
 // サーバー側でも notified_at が NULL の議事録だけを対象にし、条件付きUPDATEで送信権
@@ -36,6 +38,9 @@ type MinuteForMail = {
     } | null
   } | null
 }
+
+type SharedMeeting = { meeting_type: 'facility' | 'kitchen'; target_month: string }
+const SHARED_TYPE_ORDER: Record<'facility' | 'kitchen', number> = { facility: 0, kitchen: 1 }
 
 export async function POST(request: NextRequest) {
   let minuteId = ''
@@ -98,6 +103,19 @@ export async function POST(request: NextRequest) {
     const typeLabel = MEETING_TYPE_LABELS[m.meeting_type]
     const assignee = m.schedules?.group_managers?.name ?? m.schedules?.staff_members?.name ?? '未設定'
 
+    // 同時開催で共有しているPDF（2件以上のMTに紐付く）は、PDF 1件につき1通のまま、
+    // 紐付いている全てのMT種別を件名・本文に載せる。単独のPDFは従来どおりの文面
+    const { data: linkRows, error: linkError } = await supabase
+      .from('meeting_minute_links')
+      .select('meetings ( meeting_type, target_month )')
+      .eq('minute_id', minuteId)
+    if (linkError) throw linkError
+    const linked = ((linkRows ?? []) as unknown as { meetings: SharedMeeting | null }[])
+      .map(r => r.meetings)
+      .filter((x): x is SharedMeeting => x !== null)
+      .sort((a, b) => SHARED_TYPE_ORDER[a.meeting_type] - SHARED_TYPE_ORDER[b.meeting_type])
+    const shared = linked.length > 1
+
     // 3) PDFを取得して添付を準備。できなかった場合のみ7日間の署名付きURLにフォールバック
     let attachments: MailAttachment[] | undefined
     let fallbackNote: string | null = null
@@ -117,13 +135,21 @@ export async function POST(request: NextRequest) {
       if (signError) console.error(`[${LOG_TAG}] signed URL error:`, signError)
     }
 
-    const subject = `【MT議事録登録】${facilityName}／${typeLabel}／${formatYearMonth(m.target_month)}`
+    const sharedTypes = linked.map(x => MEETING_TYPE_LABELS[x.meeting_type]).join('・')
+    const sharedMonths = linked.map(x => formatYearMonth(x.target_month))
+    const sharedMonthText = sharedMonths.every(v => v === sharedMonths[0])
+      ? sharedMonths[0]
+      : linked.map((x, i) => `${MEETING_TYPE_LABELS[x.meeting_type]} ${sharedMonths[i]}`).join('／')
+
+    const subject = shared
+      ? `【MT議事録登録】${facilityName}／${sharedTypes}（同時開催）／${formatYearMonth(m.target_month)}`
+      : `【MT議事録登録】${facilityName}／${typeLabel}／${formatYearMonth(m.target_month)}`
     const lines = [
-      'MTの議事録が登録されました。',
+      shared ? 'MTの議事録が登録されました（施設MTと厨房MTの同時開催で共有している議事録です）。' : 'MTの議事録が登録されました。',
       '',
       `施設：${facilityName}`,
-      `MT種別：${typeLabel}`,
-      `計画月：${formatYearMonth(m.target_month)}`,
+      shared ? `MT種別：${sharedTypes}（同時開催）` : `MT種別：${typeLabel}`,
+      `計画月：${shared ? sharedMonthText : formatYearMonth(m.target_month)}`,
       `実施日：${m.executed_date ? formatDateJpFull(m.executed_date) : '未設定'}`,
       `担当者：${assignee}`,
       `PDFファイル名：${row.file_name}`,

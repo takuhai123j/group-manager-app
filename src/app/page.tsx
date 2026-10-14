@@ -276,6 +276,7 @@ export default function HomePage() {
   const handleCreateJointMeetings = async (input: Parameters<typeof createJointMeetings>[0]) => {
     const result = await createJointMeetings(input)
     if (result.scheduleId) await reloadEvents({ silent: true })
+    return { notification: result.notification }
   }
 
   const handleJoinMeetings: typeof joinMeetings = async (meetingId, partnerId, options) => {

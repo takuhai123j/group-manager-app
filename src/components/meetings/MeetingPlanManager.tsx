@@ -60,7 +60,7 @@ interface MeetingPlanManagerProps {
   onDeleteMeeting: (meetingId: string) => Promise<void>
   // MT同時開催
   onGetJoinCandidates: (base: Pick<Meeting, 'facilityId' | 'meetingType' | 'targetMonth'>) => Promise<Meeting[]>
-  onCreateJoint: (input: CreateJointMeetingsInput) => Promise<void>
+  onCreateJoint: (input: CreateJointMeetingsInput) => Promise<MeetingNotifyResult>
   onJoinMeetings: (meetingId: string, partnerId: string, options: JoinMeetingsOptions) => Promise<void>
   onChangeJointPartner: (meeting: Meeting, partnerId: string, options: JoinMeetingsOptions) => Promise<void>
   onLeaveJoint: (meeting: Meeting) => Promise<void>
@@ -565,11 +565,12 @@ export function MeetingPlanManager({
               targetMonth: selectedCell.targetMonth,
             })
           : Promise.resolve([])}
-        // 同時開催の結合・解除・新規登録は、通知APIのグループ対応（第2段階D）まで通知しない
+        // 同時開催の新規登録は、共通予定を新しく作った場合だけ予定確定通知（1組につき1通）を送る。
+        // 結合・解除・相手の変更は通知しない
         onAddJoint={async input => {
           if (!selectedCell) return
           setNotifyNotice(null)
-          await onCreateJoint({
+          const result = await onCreateJoint({
             facilityId: selectedCell.facility.id,
             meetingType: selectedCell.meetingType,
             targetMonth: selectedCell.targetMonth,
@@ -578,6 +579,7 @@ export function MeetingPlanManager({
             partnerTargetMonth: input.partnerTargetMonth,
             schedule: input.schedule,
           })
+          showNotifyResult(result)
         }}
         onJoin={async (partnerId, options) => {
           if (!activeCellMeeting) return

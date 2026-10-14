@@ -65,10 +65,9 @@ export function useMeetingPlan(year: number) {
   }, [reloadSilently])
 
   const confirmSchedule = useCallback(async (meetingId: string, input: ConfirmMeetingScheduleInput): Promise<MeetingNotifyResult> => {
-    const confirmed = await meetingScheduleService.confirmSchedule(meetingId, input)
+    await meetingScheduleService.confirmSchedule(meetingId, input)
     await reloadSilently()
-    // 同時開催の共通予定は、通知APIがグループ単位（1通）に対応するまで送らない（第2段階D で対応）
-    if (confirmed.jointGroupId) return {}
+    // 同時開催の共通予定も同じAPIを呼ぶ（サーバー側が同時開催1組につき1通にまとめる）
     const notification = await meetingNotifyService.notifyScheduleConfirmed(meetingId)
     return { notification }
   }, [reloadSilently])
@@ -140,8 +139,8 @@ export function useMeetingPlan(year: number) {
   }, [reloadSilently])
 
   // ── MT同時開催 ──────────────────────────────────────────────
-  // 結合・解除は通知を送らない（過去のMTを結合しても再送しない）。
-  // 新規登録で共通予定を作成した場合の通知は、通知APIのグループ対応（第2段階D）で追加する
+  // 結合・解除・相手の変更は通知を送らない（過去のMTを結合・解除しても再送しない）。
+  // 新規登録で共通予定を新しく作成した場合だけ、予定確定通知を1通送る（相手の既存予定に合わせた場合は送らない）
 
   const getJoinCandidates = useCallback((meeting: Pick<Meeting, 'facilityId' | 'meetingType' | 'targetMonth'>): Promise<Meeting[]> => {
     return meetingJointService.getJoinCandidates(meeting)
@@ -153,10 +152,12 @@ export function useMeetingPlan(year: number) {
     return joined
   }, [reloadSilently])
 
-  const createJointMeetings = useCallback(async (input: CreateJointMeetingsInput): Promise<CreateJointMeetingsResult> => {
+  const createJointMeetings = useCallback(async (input: CreateJointMeetingsInput): Promise<CreateJointMeetingsResult & MeetingNotifyResult> => {
     const result = await meetingJointService.createJoint(input)
     await reloadSilently()
-    return result
+    if (!result.scheduleCreated) return result
+    const notification = await meetingNotifyService.notifyScheduleConfirmed(result.meetingId)
+    return { ...result, notification }
   }, [reloadSilently])
 
   const leaveJoint = useCallback(async (meeting: Meeting, keepMeetingId?: string): Promise<Meeting> => {

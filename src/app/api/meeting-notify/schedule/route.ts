@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import {
-  getMailConfig, sendMail, createServerSupabase, claimStaleBeforeIso, UUID_RE,
+  getMailConfig, sendMail, createServerSupabase, claimStaleBeforeIso, UUID_RE, type MailConfig,
   formatDateJpFull, formatMonthDay, formatYearMonth, toTimeHm,
 } from '@/lib/server/notifyMail'
 
-// MT予定確定通知（1MTにつき原則1回）。
+// MT予定確定通知（1MTにつき原則1回。同時開催中のMTは同時開催1組につき1回 → notifyJointGroup）。
 //
 // 呼び出し元はクライアントの「日付・時間を初めて確定した操作」のみ
 //   （MT新規登録で日付あり / 日程未定MTへの予定保存）。日程変更・取消などからは呼ばない。
@@ -53,6 +53,21 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServerSupabase()
 
+  // 同時開催中のMTは、同時開催1組につき1通にまとめる（どちらのMTのIDで呼ばれても同じ1通）
+  const { data: target, error: targetError } = await supabase
+    .from('meetings')
+    .select('joint_group_id')
+    .eq('id', meetingId)
+    .maybeSingle()
+  if (targetError) {
+    console.error(`[${LOG_TAG}] load error:`, targetError)
+    return NextResponse.json({ status: 'error', error: '通知状態の確認に失敗しました' }, { status: 500 })
+  }
+  if (target?.joint_group_id) {
+    return notifyJointGroup(supabase, cfg.config, target.joint_group_id)
+  }
+
+  // ── 単独MT（従来どおり） ──
   // 1) 送信権の確保（1回のUPDATEで判定と確保を同時に行う。並行リクエストでは片方だけが成功する）
   const { data: claimed, error: claimError } = await supabase
     .from('meetings')
@@ -137,4 +152,129 @@ export async function POST(request: NextRequest) {
       if (error) console.error(`[${LOG_TAG}] release claim error:`, error)
     }
   }
+}
+
+// ── 同時開催（施設MT＋厨房MT）の予定確定通知：同時開催1組につき1通 ──
+//
+// 同時開催の2件は同じ schedules 行を共有し、通知済み状態（schedule_notified_at）も
+// 結合・解除のRPCが2件で揃えている（結合時は2件の最新値、解除時は複製先へ引き継ぎ）。
+// そのため「2件とも未通知」の場合だけ送り、1件でも通知済みなら送らない
+// （後から結合・解除・相手の変更をしても、送信済みの予定を再通知しない）。
+// 送信権は2件を1回のUPDATEで確保し、2件とも確保できた場合だけ送る（並行リクエストでは片方だけが送る）。
+
+type JointMemberForMail = MeetingForMail & { schedule_id: string | null }
+
+const JOINT_TYPE_ORDER: Record<'facility' | 'kitchen', number> = { facility: 0, kitchen: 1 }
+
+async function notifyJointGroup(
+  supabase: ReturnType<typeof createServerSupabase>,
+  config: MailConfig,
+  groupId: string,
+): Promise<NextResponse> {
+  // 1) 送信権の確保（同時開催の2件をまとめて確保する）
+  const { data: claimed, error: claimError } = await supabase
+    .from('meetings')
+    .update({ schedule_notify_claimed_at: new Date().toISOString() })
+    .eq('joint_group_id', groupId)
+    .not('schedule_id', 'is', null)
+    .is('schedule_notified_at', null)
+    .or(`schedule_notify_claimed_at.is.null,schedule_notify_claimed_at.lt.${claimStaleBeforeIso()}`)
+    .select('id')
+  if (claimError) {
+    console.error(`[${LOG_TAG}] joint claim error:`, claimError)
+    return NextResponse.json({ status: 'error', error: '通知状態の確認に失敗しました' }, { status: 500 })
+  }
+  const claimedIds = (claimed ?? []).map(r => r.id)
+  if (claimedIds.length !== 2) {
+    // 通知済み / 処理中 / 日程未確定 のいずれか（1件だけ確保できた場合も、もう一方が通知済み・処理中なので送らない）
+    if (claimedIds.length > 0) await releaseClaims(supabase, claimedIds)
+    return NextResponse.json({ status: 'skipped' })
+  }
+
+  let completed = false
+  try {
+    // 2) メール内容をDBの最新状態から組み立てる
+    const { data, error } = await supabase
+      .from('meetings')
+      .select(`
+        id, meeting_type, target_month, memo, schedule_id,
+        facilities ( name ),
+        schedules ( date, start_time, end_time, is_all_day, group_managers ( name ), staff_members ( name ) )
+      `)
+      .in('id', claimedIds)
+    if (error || !data) throw error ?? new Error('MTが見つかりません')
+    const members = (data as unknown as JointMemberForMail[])
+      .sort((a, b) => JOINT_TYPE_ORDER[a.meeting_type] - JOINT_TYPE_ORDER[b.meeting_type])
+    if (members.length !== 2 || members[0].schedule_id !== members[1].schedule_id || !members[0].schedules) {
+      throw new Error('同時開催の予定が一致しません')
+    }
+
+    const { subject, text } = buildJointScheduleMail(members)
+
+    // 3) 送信
+    const result = await sendMail(config, { subject, text }, LOG_TAG)
+    if (!result.ok) {
+      return NextResponse.json({ status: 'error', error: 'メール送信に失敗しました' }, { status: 502 })
+    }
+
+    // 4) 成功時のみ2件とも通知済みにする
+    const { error: markError } = await supabase
+      .from('meetings')
+      .update({ schedule_notified_at: new Date().toISOString(), schedule_notify_claimed_at: null })
+      .in('id', claimedIds)
+    if (markError) console.error(`[${LOG_TAG}] joint mark notified error (mail was sent):`, markError)
+    completed = true
+    return NextResponse.json({ status: 'sent' })
+  } catch (err) {
+    console.error(`[${LOG_TAG}] joint unexpected error:`, err)
+    return NextResponse.json({ status: 'error', error: '通知処理中にエラーが発生しました' }, { status: 500 })
+  } finally {
+    if (!completed) await releaseClaims(supabase, claimedIds)
+  }
+}
+
+// 送信失敗・途中エラー時は処理中の目印だけを外す（schedule_notified_at は NULL のまま＝再試行可能）
+async function releaseClaims(supabase: ReturnType<typeof createServerSupabase>, ids: string[]) {
+  const { error } = await supabase
+    .from('meetings')
+    .update({ schedule_notify_claimed_at: null })
+    .in('id', ids)
+    .is('schedule_notified_at', null)
+  if (error) console.error(`[${LOG_TAG}] release claim error:`, error)
+}
+
+// 同時開催の予定確定メール。施設MT・厨房MTの両方の種別を件名・本文に載せる。
+// 計画月・メモは2件で異なる場合があるため、異なる場合だけ種別ごとに並べる
+function buildJointScheduleMail(members: JointMemberForMail[]): { subject: string; text: string } {
+  const s = members[0].schedules!
+  const facilityName = members[0].facilities?.name ?? '（施設不明）'
+  const typeLabels = members.map(m => MEETING_TYPE_LABELS[m.meeting_type]).join('・')
+  const assignee = s.group_managers?.name ?? s.staff_members?.name ?? '未設定'
+  const timeText = s.is_all_day ? '終日' : `${toTimeHm(s.start_time)}〜${toTimeHm(s.end_time)}`
+
+  const months = members.map(m => formatYearMonth(m.target_month))
+  const monthText = months[0] === months[1]
+    ? months[0]
+    : members.map((m, i) => `${MEETING_TYPE_LABELS[m.meeting_type]} ${months[i]}`).join('／')
+
+  const memos = members.map(m => m.memo?.trim() ?? '')
+  const memoText = memos.every(v => !v)
+    ? '（なし）'
+    : memos[0] === memos[1]
+      ? memos[0]
+      : members.filter((_, i) => memos[i]).map(m => `${MEETING_TYPE_LABELS[m.meeting_type]}：${m.memo.trim()}`).join('／')
+
+  const subject = `【MT予定登録】${facilityName}／${typeLabels}（同時開催）／${formatMonthDay(s.date)}`
+  const text = [
+    'MTの予定が登録されました（施設MTと厨房MTの同時開催です）。',
+    '',
+    `施設：${facilityName}`,
+    `MT種別：${typeLabels}（同時開催）`,
+    `担当者：${assignee}`,
+    `実施予定日：${formatDateJpFull(s.date)}`,
+    `時間：${timeText}`,
+    `計画月：${monthText}`,
+    `メモ：${memoText}`,
+  ].join('\n')
+  return { subject, text }
 }
