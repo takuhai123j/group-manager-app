@@ -143,7 +143,7 @@ export function useMeetingPlan(year: number) {
   // 結合・解除は通知を送らない（過去のMTを結合しても再送しない）。
   // 新規登録で共通予定を作成した場合の通知は、通知APIのグループ対応（第2段階D）で追加する
 
-  const getJoinCandidates = useCallback((meeting: Meeting): Promise<Meeting[]> => {
+  const getJoinCandidates = useCallback((meeting: Pick<Meeting, 'facilityId' | 'meetingType' | 'targetMonth'>): Promise<Meeting[]> => {
     return meetingJointService.getJoinCandidates(meeting)
   }, [])
 
@@ -163,6 +163,15 @@ export function useMeetingPlan(year: number) {
     const left = await meetingJointService.leave(meeting, keepMeetingId)
     await reloadSilently()
     return left
+  }, [reloadSilently])
+
+  const changeJointPartner = useCallback(async (meeting: Meeting, newPartnerId: string, options?: JoinMeetingsOptions): Promise<Meeting> => {
+    try {
+      return await meetingJointService.changePartner(meeting, newPartnerId, options)
+    } finally {
+      // 解除だけ成功して結合に失敗した場合も、画面を最新状態にする
+      await reloadSilently()
+    }
   }, [reloadSilently])
 
   return {
@@ -187,5 +196,6 @@ export function useMeetingPlan(year: number) {
     joinMeetings,
     createJointMeetings,
     leaveJoint,
+    changeJointPartner,
   }
 }

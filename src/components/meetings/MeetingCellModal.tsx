@@ -3,17 +3,22 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   X, CalendarClock, CalendarCheck, CalendarX, CheckCircle2, Plus,
-  FileText, Upload, ExternalLink, Trash2, ArrowRightLeft,
+  FileText, Upload, ExternalLink, Trash2, ArrowRightLeft, Link2, Unlink, Repeat,
 } from 'lucide-react'
 import { cn, generateTimeSlots } from '@/lib/utils'
 import { parseTargetMonth, getMeetingCellStatus, MEETING_CELL_STATUS_LABELS } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import { assigneeKey, parseAssigneeKey } from '@/lib/meetingAssignee'
+import { getJoinRequirements } from '@/lib/meetingJoint'
 import { meetingMinutesService } from '@/services/meetingMinutesService'
 import { validatePdfFile } from '@/services/meetingMinutesStorageService'
+import {
+  JointCandidateList, JoinConfirmView, formatJointMonthLabel, formatMeetingSchedule,
+} from './MeetingJointViews'
 import type {
   Meeting, MeetingType, MeetingAssignee, MeetingMinute,
   ConfirmMeetingScheduleInput, RescheduleMeetingInput, CreateManualMeetingScheduleInput,
+  JoinMeetingsOptions,
 } from '@/lib/types'
 
 interface MeetingCellModalProps {
@@ -34,11 +39,28 @@ interface MeetingCellModalProps {
   onMoveTargetMonth: (newTargetMonth: string) => Promise<void>
   onMoveTargetMonthCascade: (newTargetMonth: string) => Promise<void>
   onDeleteMeeting: () => Promise<void>
+  // ── MT同時開催 ──
+  // 結合相手の候補（同じ施設・もう一方の種別・未結合・前年〜翌年）。まだMTが無いマスでも使える
+  onGetJoinCandidates: () => Promise<Meeting[]>
+  // 新規登録と同時に同時開催にする（partnerId 指定 = 既存MTが相手 / 未指定 = 相手も新規作成）
+  onAddJoint: (input: {
+    memo: string
+    partnerId?: string
+    partnerTargetMonth?: string
+    schedule?: CreateManualMeetingScheduleInput
+  }) => Promise<void>
+  onJoin: (partnerId: string, options: JoinMeetingsOptions) => Promise<void>
+  onChangeJointPartner: (partnerId: string, options: JoinMeetingsOptions) => Promise<void>
+  onLeaveJoint: () => Promise<void>
+  // 同時開催の相手MTを開く（相手が別の年の計画にある場合は年を切り替えて開く）
+  onOpenJointPartner: () => void
 }
 
 // 'confirm'/'reschedule' は 'schedule' に統合（保存操作の1本化。
 // schedule_idの有無はhandleSaveSchedule内部で判定してconfirmSchedule/rescheduleMeetingを出し分ける）
-type Mode = 'view' | 'add' | 'schedule' | 'markDone' | 'moveMonth'
+// 'join' は既存MT同士の結合と、同時開催の相手の変更の両方に使う（meeting.jointGroupId の有無で出し分ける）
+type Mode = 'view' | 'add' | 'schedule' | 'markDone' | 'moveMonth' | 'join' | 'leave'
+type JoinStep = 'select' | 'confirm'
 
 const TIME_SLOTS = generateTimeSlots(8, 20)
 
@@ -77,6 +99,7 @@ export function MeetingCellModal({
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onUploadMinute, onDeleteMinute,
   onMoveTargetMonth, onMoveTargetMonthCascade, onDeleteMeeting,
+  onGetJoinCandidates, onAddJoint, onJoin, onChangeJointPartner, onLeaveJoint, onOpenJointPartner,
 }: MeetingCellModalProps) {
   const [mode, setMode] = useState<Mode>('view')
   const [saving, setSaving] = useState(false)
@@ -105,11 +128,32 @@ export function MeetingCellModal({
   const [uploading, setUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+  // ── MT同時開催 ──
+  // 新規登録時：相手も同時に設定するか / 相手（'' = 相手のMTも新規作成）/ 新規作成する相手の計画月
+  const [addJoint, setAddJoint] = useState(false)
+  const [addPartnerId, setAddPartnerId] = useState('')
+  const [addPartnerMonth, setAddPartnerMonth] = useState('')
+  // 既存MTの結合・相手の変更：候補の選択 → 予定・実施日の確認 の2段階
+  const [joinStep, setJoinStep] = useState<JoinStep>('select')
+  const [joinPartnerId, setJoinPartnerId] = useState('')
+  const [keepScheduleId, setKeepScheduleId] = useState('')
+  const [joinExecutedDate, setJoinExecutedDate] = useState('')
+  const [candidates, setCandidates] = useState<Meeting[]>([])
+  const [candidatesLoading, setCandidatesLoading] = useState(false)
+  const [candidatesError, setCandidatesError] = useState('')
+
   useEffect(() => {
     if (!isOpen) return
     setMode(meeting ? 'view' : 'add')
     setError('')
     setAddMemo('')
+    setAddJoint(false)
+    setAddPartnerId('')
+    setAddPartnerMonth(targetMonth.slice(0, 7))
+    setJoinStep('select')
+    setJoinPartnerId('')
+    setKeepScheduleId('')
+    setJoinExecutedDate('')
     setDate(meeting?.scheduleDate ?? '')
     if (meeting?.scheduleId) {
       // 既存scheduleがある場合は、現在登録されている値を初期値にする
@@ -132,7 +176,31 @@ export function MeetingCellModal({
     setMoveMonth(meeting ? meeting.targetMonth.slice(0, 7) : '')
     setMoveCascade(false)
     setMinutesError('')
-  }, [isOpen, meeting, candidateAssignees])
+  }, [isOpen, meeting, candidateAssignees, targetMonth])
+
+  // 結合相手の候補は、同時開催の入力欄を開いた時だけ取得する
+  const needsCandidates = isOpen && ((mode === 'add' && addJoint) || mode === 'join')
+  useEffect(() => {
+    if (!needsCandidates) return
+    let cancelled = false
+    setCandidatesLoading(true)
+    setCandidatesError('')
+    onGetJoinCandidates()
+      .then(data => {
+        if (cancelled) return
+        setCandidates(data)
+        // 新規登録時、同じ月に相手の種別のMTが既にあれば、それを相手の初期値にする
+        // （相手を新規作成しようとしても、同じ月には作成できないため）
+        if (mode === 'add') {
+          const sameMonth = data.find(c => c.targetMonth === targetMonth)
+          setAddPartnerId(sameMonth ? sameMonth.id : '')
+        }
+      })
+      .catch(() => { if (!cancelled) setCandidatesError('結合できるMTの取得に失敗しました') })
+      .finally(() => { if (!cancelled) setCandidatesLoading(false) })
+    return () => { cancelled = true }
+    // onGetJoinCandidates は親の再描画で作り直されるため依存に含めない（開いたマスが変わると meeting/targetMonth が変わる）
+  },[needsCandidates, mode, meeting?.id, targetMonth])
 
   useEffect(() => {
     if (!isOpen || !meeting || meeting.status !== 'done') { setMinutes([]); return }
@@ -197,6 +265,7 @@ export function MeetingCellModal({
   //   実施予定日が空 → meetingだけ登録（日付未定）
   //   実施予定日あり → meeting作成と同時にschedule確定まで1回の操作で行う
   const handleAddUnified = () => {
+    if (addJoint) { handleAddJoint(); return }
     if (!date) {
       runAction(() => onAddManual({ memo: addMemo.trim() }))
       return
@@ -231,7 +300,10 @@ export function MeetingCellModal({
   }
 
   const handleCancel = () => {
-    if (!confirm('この日程を取り消しますか？（カレンダーの予定も削除されます）')) return
+    const message = meeting?.jointGroupId
+      ? '共通の日程を取り消しますか？（カレンダーの予定も削除され、同時開催の相手のMTも日程未定に戻ります）'
+      : 'この日程を取り消しますか？（カレンダーの予定も削除されます）'
+    if (!confirm(message)) return
     runAction(() => onCancelSchedule())
   }
 
@@ -257,6 +329,78 @@ export function MeetingCellModal({
     const { month } = parseTargetMonth(meeting.targetMonth)
     if (!confirm(`${facilityName} ${month}月の${MEETING_TYPE_LABELS[meetingType]}予定を削除しますか？`)) return
     runAction(() => onDeleteMeeting())
+  }
+
+  // ── MT同時開催 ──────────────────────────────────────────────
+  const partnerTypeLabel = MEETING_TYPE_LABELS[meetingType === 'facility' ? 'kitchen' : 'facility']
+  const addPartner = addJoint && addPartnerId ? candidates.find(c => c.id === addPartnerId) ?? null : null
+  // 相手（既存MT）に予定または実施記録がある場合、日時は相手に合わせる（新しく入力できない）
+  const addPartnerLocked = !!addPartner && (!!addPartner.scheduleId || addPartner.status === 'done')
+  const { year: baseYear } = parseTargetMonth(targetMonth || '2000-01-01')
+  const joinPartner = joinPartnerId ? candidates.find(c => c.id === joinPartnerId) ?? null : null
+  const joinRequirements = meeting && joinPartner ? getJoinRequirements(meeting, joinPartner) : null
+  const isChangingPartner = !!meeting?.jointGroupId
+  const jointPartnerLabel = meeting?.jointPartner
+    ? `${MEETING_TYPE_LABELS[meeting.jointPartner.meetingType]}・${formatJointMonthLabel(meeting.jointPartner.targetMonth)}計画`
+    : undefined
+
+  // 新規登録と同時に同時開催にする（日付が空なら日時未定のまま結合する）
+  const handleAddJoint = () => {
+    if (candidatesLoading) return
+    if (!addPartnerId && !addPartnerMonth) { setError('相手のMTの計画月を選択してください'); return }
+    const withSchedule = !addPartnerLocked && !!date
+    if (withSchedule) {
+      if (!isAllDay && startTime >= endTime) { setError('終了時間は開始時間より後にしてください'); return }
+      if (needsManagerChoice && !selectedAssignee) { setError('担当者を選択してください'); return }
+    }
+    runAction(() => onAddJoint({
+      memo: addMemo.trim(),
+      partnerId: addPartnerId || undefined,
+      partnerTargetMonth: addPartnerId ? undefined : `${addPartnerMonth}-01`,
+      schedule: withSchedule ? { date, startTime, endTime, isAllDay, assignee: selectedAssignee } : undefined,
+    }))
+  }
+
+  const startJoin = () => {
+    setJoinStep('select')
+    setJoinPartnerId('')
+    setKeepScheduleId('')
+    setJoinExecutedDate('')
+    setError('')
+    setMode('join')
+  }
+
+  // 候補の選択 → 確認画面へ。実施日の候補が1件だけなら、その日付を選択済みにする
+  // （残す予定は、もう一方を削除することへの同意になるため初期値を入れず必ず選んでもらう）
+  const handleJoinNext = () => {
+    if (!meeting || !joinPartner) { setError('同時開催にするMTを選択してください'); return }
+    const req = getJoinRequirements(meeting, joinPartner)
+    setKeepScheduleId('')
+    setJoinExecutedDate(req.executedDateChoice?.dates.length === 1 ? req.executedDateChoice.dates[0] : '')
+    setError('')
+    setJoinStep('confirm')
+  }
+
+  const handleJoinSubmit = () => {
+    if (!meeting || !joinPartner || !joinRequirements) return
+    const options: JoinMeetingsOptions = {}
+    if (joinRequirements.scheduleChoice) {
+      if (!keepScheduleId) { setError('残す予定を選択してください'); return }
+      options.keepScheduleId = keepScheduleId
+      options.deleteScheduleId = joinRequirements.scheduleChoice.scheduleIds.find(id => id !== keepScheduleId)
+    }
+    if (joinRequirements.executedDateChoice) {
+      if (!joinExecutedDate) { setError('共通の実施日を選択してください'); return }
+      options.executedDate = joinExecutedDate
+    }
+    if (options.deleteScheduleId && !confirm('選択しなかった予定はカレンダーから削除されます。同時開催にしますか？')) return
+    runAction(() => isChangingPartner
+      ? onChangeJointPartner(joinPartner.id, options)
+      : onJoin(joinPartner.id, options))
+  }
+
+  const handleLeaveJoint = () => {
+    runAction(() => onLeaveJoint())
   }
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,7 +429,10 @@ export function MeetingCellModal({
   }
 
   const handleDeleteMinute = async (minute: MeetingMinute) => {
-    if (!confirm(`「${minute.fileName}」を削除しますか？`)) return
+    const message = minute.isShared
+      ? `「${minute.fileName}」を削除しますか？\n共有しているもう一方のMTからも削除されます。`
+      : `「${minute.fileName}」を削除しますか？`
+    if (!confirm(message)) return
     setDeletingId(minute.id)
     setMinutesError('')
     try {
@@ -364,6 +511,76 @@ export function MeetingCellModal({
               <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                 この月にはまだMTの計画がありません。手動で追加できます。
               </p>
+
+              {/* 同時開催（相手のMTと一緒に開催する） */}
+              <div className={cn('rounded-lg border px-3 py-2.5', addJoint ? 'border-violet-300 bg-violet-50/50' : 'border-gray-200')}>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={addJoint}
+                    onChange={e => { setAddJoint(e.target.checked); setError('') }}
+                    className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                  />
+                  <Link2 size={14} className="text-violet-600" />
+                  {partnerTypeLabel}と同時開催にする
+                </label>
+                {addJoint && (
+                  <div className="mt-2.5 space-y-2">
+                    <p className="text-xs text-gray-500">
+                      予定・実施状況・議事録が{partnerTypeLabel}と共通になります。相手を選んでください。
+                    </p>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={addPartnerId === ''}
+                      onClick={() => { setAddPartnerId(''); setError('') }}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors bg-white',
+                        addPartnerId === '' ? 'border-violet-500 ring-1 ring-violet-500' : 'border-gray-200 hover:bg-gray-50'
+                      )}
+                    >
+                      <span className="font-medium text-gray-800">{partnerTypeLabel}も新しく追加する</span>
+                    </button>
+                    {addPartnerId === '' && (
+                      <div className="pl-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">{partnerTypeLabel}の計画月</label>
+                        <input
+                          type="month"
+                          value={addPartnerMonth}
+                          min={`${baseYear - 1}-01`}
+                          max={`${baseYear + 1}-12`}
+                          onChange={e => { setAddPartnerMonth(e.target.value); setError('') }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        />
+                      </div>
+                    )}
+                    {/* 候補が無い場合は「新しく追加する」だけを出す（候補なしの説明文は出さない） */}
+                    {(candidatesLoading || candidates.length > 0 || candidatesError) && (
+                      <>
+                      <p className="text-xs font-medium text-gray-600 pt-1">登録済みの{partnerTypeLabel}と同時開催にする</p>
+                      <JointCandidateList
+                        candidates={candidates}
+                        selectedId={addPartnerId}
+                        onSelect={id => { setAddPartnerId(id); setError('') }}
+                        baseTargetMonth={targetMonth}
+                        loading={candidatesLoading}
+                        error={candidatesError}
+                      />
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {addPartnerLocked && addPartner ? (
+                <p className="text-sm text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                  日時・実施状況は相手の{MEETING_TYPE_LABELS[addPartner.meetingType]}に合わせます
+                  （{addPartner.status === 'done' && addPartner.executedDate
+                    ? `実施済：${formatFullDateLabel(addPartner.executedDate)}`
+                    : formatMeetingSchedule(addPartner)}）
+                </p>
+              ) : (
+              <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">実施予定日</label>
                 <input
@@ -401,6 +618,8 @@ export function MeetingCellModal({
                     )}
                   </div>
                 </>
+              )}
+              </>
               )}
 
               <div>
@@ -445,6 +664,50 @@ export function MeetingCellModal({
                 <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{meeting.memo}</p>
               )}
 
+              {/* 同時開催の相手（予定・実施状況・議事録が共通） */}
+              {meeting.jointGroupId && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2.5 space-y-2">
+                  <div className="flex items-start gap-1.5 text-sm text-violet-800">
+                    <Link2 size={15} className="flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {meeting.jointPartner
+                          ? `${MEETING_TYPE_LABELS[meeting.jointPartner.meetingType]}と同時開催`
+                          : '同時開催'}
+                      </p>
+                      {meeting.jointPartner && (
+                        <p className="text-xs text-violet-700">
+                          相手の計画月：{formatJointMonthLabel(meeting.jointPartner.targetMonth)}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-600 mt-0.5">予定・実施状況・議事録は相手のMTと共通です</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-1.5 [&>button]:flex-1 [&>button]:whitespace-nowrap">
+                    {meeting.jointPartner && (
+                      <button
+                        onClick={onOpenJointPartner}
+                        className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg border border-violet-300 bg-white text-violet-700 text-xs font-medium hover:bg-violet-50"
+                      >
+                        <ExternalLink size={13} />相手のMTを開く
+                      </button>
+                    )}
+                    <button
+                      onClick={startJoin}
+                      className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg border border-violet-300 bg-white text-violet-700 text-xs font-medium hover:bg-violet-50"
+                    >
+                      <Repeat size={13} />相手を変更
+                    </button>
+                    <button
+                      onClick={() => { setError(''); setMode('leave') }}
+                      className="flex items-center justify-center gap-1 px-2 py-2 rounded-lg border border-red-200 bg-white text-red-600 text-xs font-medium hover:bg-red-50"
+                    >
+                      <Unlink size={13} />同時開催を解除
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-2 border-t space-y-2">
                 {meeting.status === 'scheduled' && (
                   <button
@@ -477,7 +740,16 @@ export function MeetingCellModal({
                 >
                   <ArrowRightLeft size={16} />計画月を変更
                 </button>
-                {!meeting.scheduleId && meeting.status === 'scheduled' && meeting.minutesCount === 0 && (
+                {!meeting.jointGroupId && (
+                  <button
+                    onClick={startJoin}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-violet-300 text-violet-700 text-sm font-medium hover:bg-violet-50"
+                  >
+                    <Link2 size={16} />{partnerTypeLabel}と同時開催にする
+                  </button>
+                )}
+                {/* 同時開催中のMTは削除できない（先に解除する。サービス側でも拒否する） */}
+                {!meeting.jointGroupId && !meeting.scheduleId && meeting.status === 'scheduled' && meeting.minutesCount === 0 && (
                   <button
                     onClick={handleDeleteMeeting}
                     disabled={saving}
@@ -509,6 +781,9 @@ export function MeetingCellModal({
                     </label>
                   </div>
 
+                  {meeting.jointGroupId && (
+                    <p className="text-xs text-violet-700">同時開催中のため、追加したPDFは相手のMTにも共有されます</p>
+                  )}
                   {minutesError && <p className="text-xs text-red-500">{minutesError}</p>}
                   {minutesNotice && (
                     <p className={cn('text-xs', minutesNotice.kind === 'warning' ? 'text-amber-700' : 'text-emerald-700')}>
@@ -530,6 +805,14 @@ export function MeetingCellModal({
                           <span className="flex-1 min-w-0 text-sm text-gray-700 truncate" title={minute.fileName}>
                             {minute.fileName}
                           </span>
+                          {minute.isShared && (
+                            <span
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-medium flex-shrink-0 whitespace-nowrap"
+                              title="同時開催で、施設MT・厨房内MTの両方に表示されている議事録です"
+                            >
+                              <Link2 size={10} />共有
+                            </span>
+                          )}
                           <a
                             href={meetingMinutesService.getOpenUrl(minute.id)}
                             target="_blank"
@@ -563,6 +846,11 @@ export function MeetingCellModal({
                 <p className="text-xs text-gray-500 mt-0.5">
                   保存すると、この内容でG長のスケジュールにも登録されます。
                 </p>
+                {meeting?.jointGroupId && (
+                  <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5 mt-1.5">
+                    同時開催の共通予定です。相手のMTの予定も同じ内容になります（カレンダーには1件で登録されます）。
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -627,6 +915,11 @@ export function MeetingCellModal({
               <div>
                 <h3 className="text-sm font-semibold text-gray-800">MTを実施済みにする</h3>
                 <p className="text-xs text-gray-500 mt-0.5">このMTを実施した記録として登録します。</p>
+                {meeting?.jointGroupId && meeting.jointPartner && (
+                  <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5 mt-1.5">
+                    同時開催の{MEETING_TYPE_LABELS[meeting.jointPartner.meetingType]}も、同じ実施日で実施済みになります。
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -708,6 +1001,66 @@ export function MeetingCellModal({
             </div>
           )}
 
+          {/* 既存MTの結合・相手の変更（候補の選択 → 予定・実施日の確認） */}
+          {mode === 'join' && meeting && (
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">
+                  {isChangingPartner ? '同時開催の相手を変更' : `${partnerTypeLabel}と同時開催にする`}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {joinStep === 'select'
+                    ? `一緒に開催する${partnerTypeLabel}を選んでください（前年〜翌年の計画から選べます）。`
+                    : '予定と実施日を確認してください。'}
+                </p>
+              </div>
+              {joinStep === 'select' ? (
+                <JointCandidateList
+                  candidates={candidates}
+                  selectedId={joinPartnerId}
+                  onSelect={id => { setJoinPartnerId(id); setError('') }}
+                  baseTargetMonth={meeting.targetMonth}
+                  loading={candidatesLoading}
+                  error={candidatesError}
+                />
+              ) : joinPartner && joinRequirements && (
+                <JoinConfirmView
+                  meeting={meeting}
+                  partner={joinPartner}
+                  requirements={joinRequirements}
+                  keepScheduleId={keepScheduleId}
+                  onKeepScheduleChange={id => { setKeepScheduleId(id); setError('') }}
+                  executedDate={joinExecutedDate}
+                  onExecutedDateChange={d => { setJoinExecutedDate(d); setError('') }}
+                  isChangingPartner={isChangingPartner}
+                  currentPartnerLabel={jointPartnerLabel}
+                />
+              )}
+            </div>
+          )}
+
+          {/* 同時開催の解除 */}
+          {mode === 'leave' && meeting && (
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">同時開催を解除</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {jointPartnerLabel ? `${jointPartnerLabel}との` : ''}同時開催を解除し、それぞれ単独のMTに戻します。
+                </p>
+              </div>
+              <ul className="text-xs text-gray-700 space-y-1 list-disc pl-4 bg-gray-50 border border-gray-200 rounded-lg py-2 pr-3">
+                {meeting.scheduleId ? (
+                  <li>共通の予定（{formatMeetingSchedule(meeting)}）は、それぞれのMTの予定として残ります（カレンダーには2件になります）</li>
+                ) : (
+                  <li>日程は未定のままです</li>
+                )}
+                <li>実施状況・実施日・計画月は変わりません</li>
+                <li>登録済みの議事録は両方のMTに残ります（共有中のPDFを削除すると両方から消えます）</li>
+                <li>通知メールは送信されません</li>
+              </ul>
+            </div>
+          )}
+
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
         </div>
@@ -721,32 +1074,47 @@ export function MeetingCellModal({
           ) : (
             <>
               <button
-                onClick={() => meeting ? setMode('view') : onClose()}
+                onClick={() => {
+                  // 結合の確認画面からは候補の選択に戻る
+                  if (mode === 'join' && joinStep === 'confirm') { setJoinStep('select'); setError(''); return }
+                  if (meeting) setMode('view'); else onClose()
+                }}
                 disabled={saving}
                 className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
               >
-                キャンセル
+                {mode === 'join' && joinStep === 'confirm' ? '戻る' : 'キャンセル'}
               </button>
               <button
                 onClick={
                   mode === 'add' ? handleAddUnified :
                   mode === 'schedule' ? handleSaveSchedule :
                   mode === 'moveMonth' ? handleMoveMonth :
+                  mode === 'join' ? (joinStep === 'select' ? handleJoinNext : handleJoinSubmit) :
+                  mode === 'leave' ? handleLeaveJoint :
                   handleMarkDone
                 }
-                disabled={saving}
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                disabled={saving || (mode === 'join' && joinStep === 'select' && !joinPartnerId) || (mode === 'add' && addJoint && candidatesLoading)}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-50',
+                  mode === 'leave' ? 'bg-red-600 hover:bg-red-700'
+                    : mode === 'join' || (mode === 'add' && addJoint) ? 'bg-violet-600 hover:bg-violet-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                )}
               >
-                {mode === 'add' && <Plus size={16} />}
+                {mode === 'add' && (addJoint ? <Link2 size={16} /> : <Plus size={16} />)}
                 {mode === 'schedule' && <CalendarCheck size={16} />}
                 {mode === 'markDone' && <CheckCircle2 size={16} />}
                 {mode === 'moveMonth' && <ArrowRightLeft size={16} />}
+                {mode === 'join' && joinStep === 'confirm' && <Link2 size={16} />}
+                {mode === 'leave' && <Unlink size={16} />}
                 {saving
                   ? '保存中…'
-                  : mode === 'add' ? '登録する'
+                  : mode === 'add' ? (addJoint ? '同時開催で登録' : '登録する')
                   : mode === 'schedule' ? '予定を保存'
                   : mode === 'markDone' ? '実施済みにする'
                   : mode === 'moveMonth' ? '移動する'
+                  : mode === 'join' ? (joinStep === 'select' ? '次へ（内容を確認）' : isChangingPartner ? '相手を変更する' : '同時開催にする')
+                  : mode === 'leave' ? '解除する'
                   : '保存'}
               </button>
             </>

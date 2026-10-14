@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo, useRef, useLayoutEffect } from 'react'
-import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History, ChevronDown, HelpCircle } from 'lucide-react'
+import { useState, useMemo, useRef, useLayoutEffect, useEffect } from 'react'
+import { X, ChevronLeft, ChevronRight, CalendarRange, Settings2, AlertTriangle, History, ChevronDown, HelpCircle, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   MEETING_TYPE_ORDER, MONTHS_IN_YEAR, MEETING_CELL_STATUS_LABELS,
-  buildMeetingLookup, buildTargetMonth, meetingLookupKey, getMeetingCellStatus,
+  buildMeetingLookup, buildTargetMonth, meetingLookupKey, getMeetingCellStatus, parseTargetMonth,
   type MeetingCellStatus,
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
@@ -14,7 +14,7 @@ import type { MeetingNotifyResult } from '@/services/meetingNotifyService'
 import type {
   Facility, GroupManager, StaffMember, MeetingAssignee, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
   MeetingFrequencyInput, ConfirmMeetingScheduleInput, RescheduleMeetingInput,
-  CreateManualMeetingScheduleInput,
+  CreateManualMeetingScheduleInput, CreateJointMeetingsInput, JoinMeetingsOptions,
 } from '@/lib/types'
 import { MeetingCellModal } from './MeetingCellModal'
 import { MeetingFrequencyPanel } from './MeetingFrequencyPanel'
@@ -58,6 +58,12 @@ interface MeetingPlanManagerProps {
   onMoveTargetMonth: (meetingId: string, newTargetMonth: string) => Promise<void>
   onMoveTargetMonthCascade: (meetingId: string, newTargetMonth: string) => Promise<void>
   onDeleteMeeting: (meetingId: string) => Promise<void>
+  // MT同時開催
+  onGetJoinCandidates: (base: Pick<Meeting, 'facilityId' | 'meetingType' | 'targetMonth'>) => Promise<Meeting[]>
+  onCreateJoint: (input: CreateJointMeetingsInput) => Promise<void>
+  onJoinMeetings: (meetingId: string, partnerId: string, options: JoinMeetingsOptions) => Promise<void>
+  onChangeJointPartner: (meeting: Meeting, partnerId: string, options: JoinMeetingsOptions) => Promise<void>
+  onLeaveJoint: (meeting: Meeting) => Promise<void>
 }
 
 type Tab = 'plan' | 'frequencies' | 'minutes'
@@ -82,6 +88,12 @@ function cellLabel(status: MeetingCellStatus, meeting: Meeting | undefined): str
   return MEETING_CELL_STATUS_LABELS[status]
 }
 
+// 同時開催の相手の計画月（同じ年なら「5月」、別の年なら「2027年1月」）
+function partnerMonthLabel(targetMonth: string, currentYear: number): string {
+  const { year, month } = parseTargetMonth(targetMonth)
+  return year === currentYear ? `${month}月` : `${year}年${month}月`
+}
+
 interface SelectedCell {
   facility: Facility
   meetingType: MeetingType
@@ -96,6 +108,7 @@ export function MeetingPlanManager({
   onClose, onAddManual, onConfirmSchedule, onReschedule, onCancelSchedule, onMarkDone,
   onSaveFrequency, onToggleFrequencyActive, onUploadMinute, onDeleteMinute,
   onMoveTargetMonth, onMoveTargetMonthCascade, onDeleteMeeting,
+  onGetJoinCandidates, onCreateJoint, onJoinMeetings, onChangeJointPartner, onLeaveJoint,
 }: MeetingPlanManagerProps) {
   const [tab, setTab] = useState<Tab>('plan')
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
@@ -164,6 +177,19 @@ export function MeetingPlanManager({
     ? lookup.get(meetingLookupKey(selectedCell.facility.id, selectedCell.meetingType, selectedCell.targetMonth)) ?? null
     : null
 
+  // 別の年にある同時開催の相手MTを開くため、年の切替後の読み込み完了を待って開く
+  const [pendingOpenMeetingId, setPendingOpenMeetingId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!pendingOpenMeetingId || loading) return
+    const target = meetings.find(m => m.id === pendingOpenMeetingId)
+    if (!target) return
+    setPendingOpenMeetingId(null)
+    const facility = facilities.find(f => f.id === target.facilityId)
+    if (facility) {
+      setSelectedCell({ facility, meetingType: target.meetingType, targetMonth: target.targetMonth, meeting: target })
+    }
+  }, [pendingOpenMeetingId, loading, meetings, facilities])
+
   // 選択中セルの施設のMT担当者候補（G長・主任 + リーダー）。
   // MeetingCellModal はこの配列の変化でフォームを初期化するため、入力が変わった時だけ作り直す
   // （毎レンダーで新しい配列を渡すと、親の再描画のたびにモーダルの入力・表示がリセットされる）
@@ -188,6 +214,17 @@ export function MeetingPlanManager({
     const facility = facilities.find(f => f.id === meeting.facilityId)
     if (!facility) return
     setSelectedCell({ facility, meetingType: meeting.meetingType, targetMonth: meeting.targetMonth, meeting })
+  }
+
+  // 同時開催の相手MTを開く。相手の計画月が別の年なら年を切り替え、読み込み後に開く
+  const openJointPartner = () => {
+    const partner = activeCellMeeting?.jointPartner
+    if (!partner) return
+    const loaded = meetings.find(m => m.id === partner.id)
+    if (loaded) { openMeetingDirectly(loaded); return }
+    setPendingOpenMeetingId(partner.id)
+    setSelectedCell(null)
+    onYearChange(parseTargetMonth(partner.targetMonth).year)
   }
 
 
@@ -394,17 +431,33 @@ export function MeetingPlanManager({
                                 const targetMonth = buildTargetMonth(year, month)
                                 const meeting = lookup.get(meetingLookupKey(facility.id, meetingType, targetMonth))
                                 const status = getMeetingCellStatus(meeting)
+                                const partner = meeting?.jointPartner ?? null
                                 return (
                                   <td key={month} className="border-b p-1 text-center min-w-14 sm:min-w-0">
                                     <button
                                       onClick={() => { rememberScroll(); openCell(facility, meetingType, month) }}
                                       className={cn(
-                                        'w-full h-9 rounded-md text-xs leading-tight flex items-center justify-center transition-colors hover:opacity-80',
-                                        CELL_STYLES[status]
+                                        'relative w-full h-9 rounded-md text-xs leading-tight flex items-center justify-center transition-colors hover:opacity-80',
+                                        CELL_STYLES[status],
+                                        meeting?.jointGroupId && 'ring-1 ring-inset ring-violet-400'
                                       )}
-                                      title={`${facility.name} ${MEETING_TYPE_LABELS[meetingType]} ${month}月 - ${MEETING_CELL_STATUS_LABELS[status]}`}
+                                      title={
+                                        `${facility.name} ${MEETING_TYPE_LABELS[meetingType]} ${month}月 - ${MEETING_CELL_STATUS_LABELS[status]}` +
+                                        (partner
+                                          ? `（${MEETING_TYPE_LABELS[partner.meetingType]}と同時開催：${partnerMonthLabel(partner.targetMonth, year)}計画）`
+                                          : '')
+                                      }
                                     >
                                       {cellLabel(status, meeting) || '－'}
+                                      {meeting?.jointGroupId && (
+                                        // スマホ幅でも文字に重ならないよう、マスの角（セルの余白側）に丸い印として出す
+                                        <span
+                                          className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-white ring-1 ring-violet-400 text-violet-600 flex items-center justify-center"
+                                          aria-label="同時開催"
+                                        >
+                                          <Link2 size={9} />
+                                        </span>
+                                      )}
                                     </button>
                                   </td>
                                 )
@@ -427,6 +480,12 @@ export function MeetingPlanManager({
                         {MEETING_CELL_STATUS_LABELS[s]}
                       </span>
                     ))}
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center ring-1 ring-violet-400 text-violet-600">
+                      <Link2 size={9} />
+                    </span>
+                    同時開催（施設MT・厨房内MTを一緒に開催）
+                  </span>
                 </div>
               </div>
             )}
@@ -499,6 +558,43 @@ export function MeetingPlanManager({
           setNotifyNotice(null) // 予定確定通知を行わない操作：前回の通知結果を残さない
           await onDeleteMeeting(selectedCell.meeting.id)
         }}
+        onGetJoinCandidates={() => selectedCell
+          ? onGetJoinCandidates({
+              facilityId: selectedCell.facility.id,
+              meetingType: selectedCell.meetingType,
+              targetMonth: selectedCell.targetMonth,
+            })
+          : Promise.resolve([])}
+        // 同時開催の結合・解除・新規登録は、通知APIのグループ対応（第2段階D）まで通知しない
+        onAddJoint={async input => {
+          if (!selectedCell) return
+          setNotifyNotice(null)
+          await onCreateJoint({
+            facilityId: selectedCell.facility.id,
+            meetingType: selectedCell.meetingType,
+            targetMonth: selectedCell.targetMonth,
+            memo: input.memo,
+            partnerId: input.partnerId,
+            partnerTargetMonth: input.partnerTargetMonth,
+            schedule: input.schedule,
+          })
+        }}
+        onJoin={async (partnerId, options) => {
+          if (!activeCellMeeting) return
+          setNotifyNotice(null)
+          await onJoinMeetings(activeCellMeeting.id, partnerId, options)
+        }}
+        onChangeJointPartner={async (partnerId, options) => {
+          if (!activeCellMeeting) return
+          setNotifyNotice(null)
+          await onChangeJointPartner(activeCellMeeting, partnerId, options)
+        }}
+        onLeaveJoint={async () => {
+          if (!activeCellMeeting) return
+          setNotifyNotice(null)
+          await onLeaveJoint(activeCellMeeting)
+        }}
+        onOpenJointPartner={openJointPartner}
       />
 
       <HelpModal

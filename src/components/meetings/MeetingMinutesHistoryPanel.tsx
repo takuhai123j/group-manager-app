@@ -6,6 +6,7 @@ import { meetingMinutesService } from '@/services/meetingMinutesService'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import { parseTargetMonth } from '@/lib/meetingPlan'
 import type { Facility, MeetingMinuteHistoryItem } from '@/lib/types'
+import { JointBadge } from './MeetingJointViews'
 
 interface MeetingMinutesHistoryPanelProps {
   facilities: Facility[]
@@ -121,7 +122,13 @@ export function MeetingMinutesHistoryPanel({ facilities, year }: MeetingMinutesH
               {items.map(item => (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">{item.facilityName}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-500">{MEETING_TYPE_LABELS[item.meetingType]}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                    {/* 同時開催で共有しているPDFは、紐付いている両方の種別を表示する（PDF 1件 = 1行） */}
+                    {item.meetingTypes.length > 0
+                      ? item.meetingTypes.map(t => MEETING_TYPE_LABELS[t]).join('・')
+                      : MEETING_TYPE_LABELS[item.meetingType]}
+                    {item.isShared && <JointBadge className="ml-1.5 align-middle" label="共有" />}
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-500">{formatMonthLabel(item.targetMonth)}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-gray-500">{item.executedDate ?? '－'}</td>
                   <td className="px-3 py-2 max-w-[220px]">

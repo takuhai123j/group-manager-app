@@ -9,6 +9,7 @@ import {
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
 import type { Meeting } from '@/lib/types'
+import { JointBadge } from './MeetingJointViews'
 
 interface MeetingDashboardProps {
   meetings: Meeting[]
@@ -161,7 +162,16 @@ export function MeetingDashboard({ meetings, onOpenMeeting }: MeetingDashboardPr
                   {activeList.map(m => (
                     <tr key={m.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 whitespace-nowrap text-gray-700">{m.facilityName}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-500">{MEETING_TYPE_LABELS[m.meetingType]}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                        {MEETING_TYPE_LABELS[m.meetingType]}
+                        {/* 同時開催は施設MT・厨房内MTの2件がそれぞれ1行ずつ出るため、相手が分かるようにする */}
+                        {m.jointPartner && (
+                          <JointBadge
+                            className="ml-1.5 align-middle"
+                            label={`${MEETING_TYPE_LABELS[m.jointPartner.meetingType]}と同時`}
+                          />
+                        )}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-500">{formatMonthLabel(m.targetMonth)}</td>
                       {activeCard === 'doneUnregistered' ? (
                         <>

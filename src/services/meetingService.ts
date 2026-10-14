@@ -197,7 +197,8 @@ export const meetingService = {
 
   // 同時開催の結合相手の候補: 同じ施設・もう一方のMT種別・未結合で、
   // 計画月が前年・当年・翌年のもの（DB側の mt_join_meetings も年の差1年以内に制限している）
-  async getJoinCandidates(meeting: Meeting): Promise<Meeting[]> {
+  // 新規登録前（まだMTが無いマス）でも使えるよう、施設・種別・計画月だけを受け取る
+  async getJoinCandidates(meeting: Pick<Meeting, 'facilityId' | 'meetingType' | 'targetMonth'>): Promise<Meeting[]> {
     const supabase = createClient()
     const year = Number(meeting.targetMonth.slice(0, 4))
     const otherType: MeetingType = meeting.meetingType === 'facility' ? 'kitchen' : 'facility'

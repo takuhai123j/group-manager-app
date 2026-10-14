@@ -169,6 +169,11 @@ export default function HomePage() {
     moveTargetMonth: moveMeetingTargetMonth,
     moveTargetMonthCascade: moveMeetingTargetMonthCascade,
     deleteMeeting: deleteMeetingRecord,
+    getJoinCandidates: getMeetingJoinCandidates,
+    joinMeetings,
+    createJointMeetings,
+    leaveJoint: leaveMeetingJoint,
+    changeJointPartner: changeMeetingJointPartner,
   } = useMeetingPlan(meetingPlanYear)
 
   const {
@@ -263,6 +268,32 @@ export default function HomePage() {
 
   const handleCancelMeetingSchedule: typeof cancelMeetingSchedule = async meetingId => {
     await cancelMeetingSchedule(meetingId)
+    await reloadEvents({ silent: true })
+  }
+
+  // MT同時開催：結合（予定の削除・タイトル変更）・解除（予定の複製）・新規登録（共通予定の作成）は
+  // schedules を変更するため、カレンダー側も再取得する
+  const handleCreateJointMeetings = async (input: Parameters<typeof createJointMeetings>[0]) => {
+    const result = await createJointMeetings(input)
+    if (result.scheduleId) await reloadEvents({ silent: true })
+  }
+
+  const handleJoinMeetings: typeof joinMeetings = async (meetingId, partnerId, options) => {
+    const joined = await joinMeetings(meetingId, partnerId, options)
+    await reloadEvents({ silent: true })
+    return joined
+  }
+
+  const handleChangeMeetingJointPartner: typeof changeMeetingJointPartner = async (meeting, partnerId, options) => {
+    try {
+      return await changeMeetingJointPartner(meeting, partnerId, options)
+    } finally {
+      await reloadEvents({ silent: true })
+    }
+  }
+
+  const handleLeaveMeetingJoint = async (meeting: Parameters<typeof leaveMeetingJoint>[0]) => {
+    await leaveMeetingJoint(meeting)
     await reloadEvents({ silent: true })
   }
 
@@ -645,6 +676,11 @@ export default function HomePage() {
         onMoveTargetMonth={moveMeetingTargetMonth}
         onMoveTargetMonthCascade={moveMeetingTargetMonthCascade}
         onDeleteMeeting={deleteMeetingRecord}
+        onGetJoinCandidates={getMeetingJoinCandidates}
+        onCreateJoint={handleCreateJointMeetings}
+        onJoinMeetings={async (meetingId, partnerId, options) => { await handleJoinMeetings(meetingId, partnerId, options) }}
+        onChangeJointPartner={async (meeting, partnerId, options) => { await handleChangeMeetingJointPartner(meeting, partnerId, options) }}
+        onLeaveJoint={handleLeaveMeetingJoint}
       />
 
       {/* リーダー管理モーダル */}
