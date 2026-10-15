@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Trash2, Save, Building2, CalendarDays, Plus, ChevronLeft, AlertCircle } from 'lucide-react'
 import { cn, generateTimeSlots, toDateString, formatJa } from '@/lib/utils'
-import { EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime, buildAutoTitle } from '@/constants/eventTypes'
+import { EVENT_TYPES, MANUAL_EVENT_TYPES, isAllDayType, isHalfDayType, computeHalfDayEndTime, buildAutoTitle } from '@/constants/eventTypes'
 import { HelpButton } from '@/components/help/HelpButton'
 import { HelpModal } from '@/components/help/HelpModal'
 import { HELP_CONTENT } from '@/constants/helpContent'
@@ -594,7 +594,7 @@ export function EventModal({
               種別 <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {EVENT_TYPES.map(t => (
+              {MANUAL_EVENT_TYPES.map(t => (
                 <button
                   key={t.value}
                   type="button"

@@ -15,6 +15,7 @@ const SELECT_WITH_JOINS = `
   type,
   is_all_day,
   memo,
+  shift_change_record_id,
   created_at,
   updated_at,
   group_managers ( name ),
@@ -46,6 +47,7 @@ type ScheduleRow = {
   type: string
   is_all_day: boolean
   memo: string
+  shift_change_record_id: string | null
   created_at: string
   updated_at: string
   group_managers: { name: string } | null
@@ -70,6 +72,7 @@ function toScheduleEvent(row: ScheduleRow): ScheduleEvent {
     groupLeaderName: row.group_managers?.name ?? row.staff_members?.name ?? '',
     staffMemberId: row.staff_member_id ?? null,
     staffMemberColor: row.staff_members?.color ?? null,
+    shiftChangeRecordId: row.shift_change_record_id ?? null,
     createdAt: row.created_at ?? '',
     updatedAt: row.updated_at ?? '',
   }

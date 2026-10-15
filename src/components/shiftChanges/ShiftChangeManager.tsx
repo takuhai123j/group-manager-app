@@ -1,27 +1,38 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Filter, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
 import { ShiftChangeFormModal } from './ShiftChangeFormModal'
 import { HelpButton } from '@/components/help/HelpButton'
 import { HelpModal } from '@/components/help/HelpModal'
 import { HELP_CONTENT } from '@/constants/helpContent'
-import type { ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters } from '@/lib/types'
+import { formatCalendarTime, targetKey } from '@/lib/shiftChangeCalendar'
+import type {
+  ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters, GroupManager, StaffMember,
+} from '@/lib/types'
 
 interface Props {
   isOpen: boolean
   records: ShiftChangeRecord[]
   loading: boolean
   facilities: Facility[]
+  // カレンダー反映先の候補（無効化済みも含めて渡す。候補に出すのは有効な人と、既に指定済みの人だけ）
+  managers: GroupManager[]
+  staffMembers: StaffMember[]
   onClose: () => void
   onAdd: (input: CreateShiftChangeInput) => Promise<ShiftChangeRecord>
+  onAddBatch: (inputs: (CreateShiftChangeInput & { id: string })[]) => Promise<ShiftChangeRecord[]>
   onUpdate: (id: string, input: CreateShiftChangeInput) => Promise<ShiftChangeRecord>
   onDelete: (id: string) => Promise<void>
   onReload: (filters?: Partial<ShiftChangeFilters>) => Promise<void>
   onLoadRelatedGroup: (groupId: string) => Promise<ShiftChangeRecord[]>
   onLinkCompensatoryLeave: (detailId: string) => Promise<void>
+  // カレンダーの自動登録予定から開くシフト変更（開いたら onOpenRecordHandled で解除する）
+  openRecordId?: string | null
+  onLoadRecord?: (id: string) => Promise<ShiftChangeRecord>
+  onOpenRecordHandled?: () => void
 }
 
 const CHANGE_TYPE_COLORS: Record<string, string> = {
@@ -46,9 +57,10 @@ function formatDateFull(s: string): string {
 }
 
 export function ShiftChangeManager({
-  isOpen, records, loading, facilities,
-  onClose, onAdd, onUpdate, onDelete, onReload,
+  isOpen, records, loading, facilities, managers, staffMembers,
+  onClose, onAdd, onAddBatch, onUpdate, onDelete, onReload,
   onLoadRelatedGroup, onLinkCompensatoryLeave,
+  openRecordId, onLoadRecord, onOpenRecordHandled,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ShiftChangeRecord | null>(null)
@@ -68,6 +80,22 @@ export function ShiftChangeManager({
     if (isOpen) onReload()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
+
+  // カレンダーから指定されたシフト変更を編集画面で開く（一覧の絞り込みに無い場合もあるため1件取得する）
+  const [openError, setOpenError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isOpen || !openRecordId) return
+    let cancelled = false
+    setOpenError(null)
+    const found = records.find(r => r.id === openRecordId)
+    const load = found ? Promise.resolve(found) : onLoadRecord?.(openRecordId) ?? Promise.reject(new Error('no loader'))
+    load
+      .then(r => { if (!cancelled) { setEditing(r); setFormOpen(true) } })
+      .catch(() => { if (!cancelled) setOpenError('シフト変更の記録を開けませんでした（削除された可能性があります）') })
+      .finally(() => { if (!cancelled) onOpenRecordHandled?.() })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, openRecordId])
 
   if (!isOpen) return null
 
@@ -101,6 +129,11 @@ export function ShiftChangeManager({
 
   // facilities の id→name マップ
   const facilityMap = new Map(facilities.map(f => [f.id, f.name]))
+  // カレンダー反映先の表示名
+  const personNameMap = new Map<string, string>([
+    ...managers.map(m => [targetKey({ type: 'group_manager', id: m.id }), m.name] as const),
+    ...staffMembers.map(s => [targetKey({ type: 'staff_member', id: s.id }), s.name] as const),
+  ])
 
   return (
     <>
@@ -209,6 +242,10 @@ export function ShiftChangeManager({
           </div>
         )}
 
+        {openError && (
+          <p role="alert" className="mx-4 mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{openError}</p>
+        )}
+
         {/* コンテンツ */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -258,6 +295,12 @@ export function ShiftChangeManager({
                               他施設応援{supportName ? `：${supportName}` : ''}
                             </span>
                           )}
+                          {d.calendarTarget && (
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-800 border border-indigo-300">
+                              <CalendarCheck size={11} />
+                              {personNameMap.get(targetKey(d.calendarTarget)) ?? '（不明）'}・{formatCalendarTime(d.startTime, d.endTime)}
+                            </span>
+                          )}
                           {d.compensatoryLeaveStatus === 'unset' && (
                             <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                               振休未設定
@@ -286,8 +329,11 @@ export function ShiftChangeManager({
         isOpen={formOpen}
         editing={editing}
         facilities={facilities}
+        managers={managers}
+        staffMembers={staffMembers}
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
+        onSaveBatch={onAddBatch}
         onDelete={onDelete}
         onLoadRelatedGroup={onLoadRelatedGroup}
         onCreateLinkedRecord={onAdd}

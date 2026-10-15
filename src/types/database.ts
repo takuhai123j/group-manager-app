@@ -143,6 +143,7 @@ export type Database = {
           id: string
           is_all_day: boolean
           memo: string
+          shift_change_record_id: string | null
           staff_member_id: string | null
           start_time: string
           title: string
@@ -330,6 +331,10 @@ export type Database = {
           replacement_name: string | null
           replacement_original_shift: string | null
           compensatory_leave_status: string | null
+          calendar_group_manager_id: string | null
+          calendar_staff_member_id: string | null
+          start_time: string | null
+          end_time: string | null
         }
         Insert: {
           id?: string
@@ -638,6 +643,12 @@ export type Database = {
     // MT同時開催のRPC（SECURITY INVOKER・anonのみ実行可）。
     // 失敗時は 'MTJ_<コード>: <メッセージ>' 形式のエラーを返す
     Functions: {
+      // シフト変更の保存（明細の入れ替えと自動生成予定の作り直しを1トランザクションで行う）。
+      // 失敗時は 'SCC_<コード>: <メッセージ>' 形式のエラーを返す
+      shift_change_save_batch: {
+        Args: { p_records: unknown }
+        Returns: string[]
+      }
       mt_join_meetings: {
         Args: {
           p_meeting_id: string

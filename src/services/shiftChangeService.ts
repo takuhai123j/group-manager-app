@@ -26,8 +26,57 @@ function toDetail(row: DetailRow): ShiftChangeDetail {
     replacementName: row.replacement_name ?? null,
     replacementOriginalShift: row.replacement_original_shift ?? null,
     compensatoryLeaveStatus: (row.compensatory_leave_status as ShiftChangeDetail['compensatoryLeaveStatus']) ?? null,
+    calendarTarget: row.calendar_group_manager_id
+      ? { type: 'group_manager', id: row.calendar_group_manager_id }
+      : row.calendar_staff_member_id
+        ? { type: 'staff_member', id: row.calendar_staff_member_id }
+        : null,
+    startTime: row.start_time ?? null,
+    endTime: row.end_time ?? null,
   }
 }
+
+// RPC（shift_change_save_batch）に渡す1件分。反映先がない明細は時刻も送らない（時刻はカレンダー用のため）
+function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftChangeInput) {
+  return {
+    id,
+    mode,
+    facility_id: input.facilityId,
+    target_date: input.targetDate,
+    reason: input.reason,
+    handled_by: input.handledBy,
+    memo: input.memo || '',
+    related_change_group_id: input.relatedChangeGroupId ?? null,
+    details: input.details.map(d => {
+      const target = d.calendarTarget ?? null
+      const timed = !!target && !!d.startTime && !!d.endTime
+      return {
+        employee_name: d.employeeName,
+        change_type: d.changeType,
+        change_detail: d.changeDetail,
+        is_external_support: d.isExternalSupport,
+        support_from_facility_id: d.isExternalSupport && d.supportFromFacilityId ? d.supportFromFacilityId : null,
+        original_shift: d.originalShift ?? null,
+        replacement_name: d.replacementName ?? null,
+        replacement_original_shift: d.replacementOriginalShift ?? null,
+        compensatory_leave_status: d.compensatoryLeaveStatus ?? null,
+        calendar_group_manager_id: target?.type === 'group_manager' ? target.id : null,
+        calendar_staff_member_id: target?.type === 'staff_member' ? target.id : null,
+        start_time: timed ? d.startTime : null,
+        end_time: timed ? d.endTime : null,
+      }
+    }),
+  }
+}
+
+// RPCのエラー（'SCC_<コード>: メッセージ'）は日本語メッセージだけを画面に出す
+export function shiftChangeErrorMessage(e: unknown, fallback: string): string {
+  const msg = (e as { message?: string } | null)?.message ?? ''
+  const m = msg.match(/SCC_[A-Z_]+:\s*(.+)$/)
+  return m ? m[1] : fallback
+}
+
+export type ShiftChangeSaveItem = { id: string; mode: 'create' | 'update'; input: CreateShiftChangeInput }
 
 function toRecord(row: ParentRow): ShiftChangeRecord {
   const details = (row.shift_change_details ?? [])
@@ -118,78 +167,35 @@ export const shiftChangeService = {
     if (error) throw error
   },
 
-  async create(input: CreateShiftChangeInput): Promise<ShiftChangeRecord> {
+  // 保存（新規・編集・期間/複数日の一括）。シフト変更本体・明細・自動生成予定を1トランザクションで保存する。
+  // 新規のIDは画面側で発行して渡すため、応答が失われて再試行しても二重登録にならない
+  async saveBatch(items: ShiftChangeSaveItem[]): Promise<ShiftChangeRecord[]> {
     const supabase = createClient()
+    const { data, error } = await supabase.rpc('shift_change_save_batch', {
+      p_records: items.map(it => toRpcRecord(it.id, it.mode, it.input)),
+    })
+    if (error) throw error
+    const ids = (data as string[] | null) ?? items.map(it => it.id)
 
-    const { data: parent, error: parentError } = await supabase
+    const { data: rows, error: fetchError } = await supabase
       .from('shift_change_records')
-      .insert({
-        facility_id: input.facilityId,
-        target_date: input.targetDate,
-        reason: input.reason,
-        handled_by: input.handledBy,
-        memo: input.memo || null,
-        related_change_group_id: input.relatedChangeGroupId ?? null,
-      })
-      .select('id')
-      .single()
-    if (parentError || !parent) throw parentError ?? new Error('親レコードの作成に失敗しました')
+      .select('*, facilities(name), shift_change_details(*)')
+      .in('id', ids)
+    if (fetchError) throw fetchError
+    const byId = new Map((rows ?? []).map(row => [row.id, toRecord(row as ParentRow)]))
+    return ids.map(id => byId.get(id)).filter((r): r is ShiftChangeRecord => !!r)
+  },
 
-    const detailRows = input.details.map((d, i) => ({
-      record_id: parent.id,
-      employee_name: d.employeeName,
-      change_type: d.changeType,
-      change_detail: d.changeDetail,
-      is_external_support: d.isExternalSupport,
-      support_from_facility_id: d.isExternalSupport && d.supportFromFacilityId ? d.supportFromFacilityId : null,
-      sort_order: i,
-      original_shift: d.originalShift ?? null,
-      replacement_name: d.replacementName ?? null,
-      replacement_original_shift: d.replacementOriginalShift ?? null,
-      compensatory_leave_status: d.compensatoryLeaveStatus ?? null,
-    }))
-    const { error: detailError } = await supabase.from('shift_change_details').insert(detailRows)
-    if (detailError) throw detailError
-
-    return this.getById(parent.id)
+  async create(input: CreateShiftChangeInput): Promise<ShiftChangeRecord> {
+    const [saved] = await this.saveBatch([{ id: input.id ?? crypto.randomUUID(), mode: 'create', input }])
+    if (!saved) throw new Error('保存したシフト変更を読み込めませんでした')
+    return saved
   },
 
   async update(id: string, input: CreateShiftChangeInput): Promise<ShiftChangeRecord> {
-    const supabase = createClient()
-
-    const patch: Database['public']['Tables']['shift_change_records']['Update'] = {
-      facility_id: input.facilityId,
-      target_date: input.targetDate,
-      reason: input.reason,
-      handled_by: input.handledBy,
-      memo: input.memo || null,
-      related_change_group_id: input.relatedChangeGroupId ?? null,
-    }
-    const { error: updateError } = await supabase
-      .from('shift_change_records').update(patch).eq('id', id)
-    if (updateError) throw updateError
-
-    const { error: deleteError } = await supabase
-      .from('shift_change_details').delete().eq('record_id', id)
-    if (deleteError) throw deleteError
-
-    const detailRows = input.details.map((d, i) => ({
-      record_id: id,
-      employee_name: d.employeeName,
-      change_type: d.changeType,
-      change_detail: d.changeDetail,
-      is_external_support: d.isExternalSupport,
-      support_from_facility_id: d.isExternalSupport && d.supportFromFacilityId ? d.supportFromFacilityId : null,
-      sort_order: i,
-      original_shift: d.originalShift ?? null,
-      replacement_name: d.replacementName ?? null,
-      replacement_original_shift: d.replacementOriginalShift ?? null,
-      compensatory_leave_status: d.compensatoryLeaveStatus ?? null,
-    }))
-    const { error: insertError } = await supabase.from('shift_change_details').insert(detailRows)
-    if (insertError) throw insertError
-
-    return this.getById(id)
+    const [saved] = await this.saveBatch([{ id, mode: 'update', input }])
+    if (!saved) throw new Error('保存したシフト変更を読み込めませんでした')
+    return saved
   },
 
   async delete(id: string): Promise<void> {

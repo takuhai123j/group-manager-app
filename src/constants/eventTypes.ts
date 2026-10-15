@@ -136,6 +136,17 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     dotColor: 'bg-teal-300',
     solidBg: '#5EEAD4',
   },
+  // シフト変更記録からの自動登録専用（手動の予定では選べない。MANUAL_EVENT_TYPES から除外）。
+  // 編集・削除はシフト変更画面からだけ行う。濃い枠で手動の予定と見分けやすくする
+  {
+    value: 'shift_change',
+    label: 'シフト変更',
+    bgColor: 'bg-indigo-50',
+    textColor: 'text-indigo-900',
+    borderColor: 'border-indigo-500',
+    dotColor: 'bg-indigo-500',
+    solidBg: '#6366F1',
+  },
   {
     value: 'other',
     label: 'その他',
@@ -146,6 +157,9 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     solidBg: '#9CA3AF',
   },
 ]
+
+/** 予定の登録・編集画面で選べる種別（自動登録専用の種別を除く） */
+export const MANUAL_EVENT_TYPES: EventTypeConfig[] = EVENT_TYPES.filter(t => t.value !== 'shift_change')
 
 export const getEventTypeConfig = (type: EventType): EventTypeConfig => {
   return EVENT_TYPES.find(t => t.value === type) ?? EVENT_TYPES[EVENT_TYPES.length - 1]

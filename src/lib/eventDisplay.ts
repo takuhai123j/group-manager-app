@@ -1,5 +1,6 @@
 import type { CalendarView, ScheduleEvent } from '@/lib/types'
 import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
+import { shiftChangeTypeFromTitle } from '@/lib/shiftChangeCalendar'
 
 /**
  * カレンダー表示用のイベントテキストを生成する共通関数
@@ -9,8 +10,13 @@ import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
  * 全日: "【公休】福田G長"
  */
 export function formatEventDisplay(event: ScheduleEvent, viewType: CalendarView): string {
-  const typeLabel = getEventTypeConfig(event.type).label
-  const typeTag = `【${typeLabel}】`
+  // シフト変更からの自動登録は、種別の代わりに変更種別（欠勤・時間変更など）を見出しにし、
+  // 担当者別の色表示でも手動の予定と見分けられるよう「⇆」を付ける
+  const isShiftChange = event.type === 'shift_change'
+  const typeLabel = isShiftChange
+    ? shiftChangeTypeFromTitle(event.title)
+    : getEventTypeConfig(event.type).label
+  const typeTag = `${isShiftChange ? '⇆' : ''}【${typeLabel}】`
 
   if (event.isAllDay) {
     return `${typeTag}${event.groupLeaderName}`

@@ -13,6 +13,7 @@ export type EventType =
   | 'hankyuu'       // 半休（時間指定・4時間）
   | 'han_yukyu'     // 半有休（時間指定・4時間）
   | 'other'         // その他
+  | 'shift_change'  // シフト変更（シフト変更記録からの自動登録専用。手動では選べない）
 
 export type CalendarView = 'month' | 'week' | 'day'
 
@@ -55,6 +56,7 @@ export interface ScheduleEvent {
   groupLeaderName: string     // 表示用の担当者名（G長・主任、なければリーダーの名前）
   staffMemberId: string | null     // スタッフ（リーダー・ラウンダー・現場社員）担当の予定のみ。G長・主任の予定では null
   staffMemberColor: string | null  // スタッフ担当の予定の表示色（JOINで取得）
+  shiftChangeRecordId: string | null  // シフト変更から自動登録した予定のみ（元のシフト変更のID）。手動の予定は null
   createdAt: string
   updatedAt: string
 }
@@ -178,6 +180,10 @@ export interface ShiftChangeDetail {
   replacementName: string | null
   replacementOriginalShift: string | null
   compensatoryLeaveStatus: CompensatoryLeaveStatus | null
+  // 個人カレンダーへの反映先（G長・主任 or スタッフ。null は反映しない）と時刻（null は終日）
+  calendarTarget: MeetingAssigneeRef | null
+  startTime: string | null
+  endTime: string | null
 }
 
 export interface ShiftChangeRecord {
@@ -204,9 +210,14 @@ export type CreateShiftChangeDetailInput = {
   replacementName?: string | null
   replacementOriginalShift?: string | null
   compensatoryLeaveStatus?: CompensatoryLeaveStatus | null
+  calendarTarget?: MeetingAssigneeRef | null
+  startTime?: string | null
+  endTime?: string | null
 }
 
 export type CreateShiftChangeInput = {
+  // 新規登録で画面側が発行するID（再試行で二重登録しないため）。省略時はサービス側で発行する
+  id?: string
   facilityId: string
   targetDate: string
   reason: string

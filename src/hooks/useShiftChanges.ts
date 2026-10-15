@@ -26,7 +26,16 @@ export function useShiftChanges() {
 
   const addRecord = useCallback(async (input: CreateShiftChangeInput): Promise<ShiftChangeRecord> => {
     const created = await shiftChangeService.create(input)
-    setRecords(prev => [created, ...prev])
+    setRecords(prev => [created, ...prev.filter(r => r.id !== created.id)])
+    return created
+  }, [])
+
+  // 期間・複数日の一括登録（全日分を1トランザクションで保存。IDは画面側で発行済み）
+  const addRecords = useCallback(async (inputs: (CreateShiftChangeInput & { id: string })[]): Promise<ShiftChangeRecord[]> => {
+    const created = await shiftChangeService.saveBatch(inputs.map(input => ({ id: input.id, mode: 'create' as const, input })))
+    const ids = new Set(created.map(r => r.id))
+    // 再試行で同じIDが既に一覧にある場合は差し替える
+    setRecords(prev => [...created, ...prev.filter(r => !ids.has(r.id))])
     return created
   }, [])
 
@@ -39,6 +48,11 @@ export function useShiftChanges() {
   const deleteRecord = useCallback(async (id: string): Promise<void> => {
     await shiftChangeService.delete(id)
     setRecords(prev => prev.filter(r => r.id !== id))
+  }, [])
+
+  // 1件取得（カレンダーの自動登録予定から元のシフト変更を開くとき。一覧の絞り込み結果に無い場合もあるため）
+  const loadRecord = useCallback(async (id: string): Promise<ShiftChangeRecord> => {
+    return shiftChangeService.getById(id)
   }, [])
 
   // 振休対応グループ（related_change_group_id）に属するレコード一覧を取得
@@ -61,9 +75,11 @@ export function useShiftChanges() {
     error,
     reload: load,
     addRecord,
+    addRecords,
     updateRecord,
     deleteRecord,
     loadGroup,
+    loadRecord,
     linkCompensatoryLeave,
   }
 }

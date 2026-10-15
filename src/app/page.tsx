@@ -18,6 +18,7 @@ import { MonthView } from '@/components/calendar/MonthView'
 import { WeekView } from '@/components/calendar/WeekView'
 import { DayView } from '@/components/calendar/DayView'
 import { EventModal } from '@/components/events/EventModal'
+import { ShiftChangeEventInfo } from '@/components/events/ShiftChangeEventInfo'
 import { FacilityManager } from '@/components/facilities/FacilityManager'
 import { GroupManagerModal } from '@/components/managers/GroupManagerModal'
 import { AnnouncementBanner } from '@/components/announcements/AnnouncementBanner'
@@ -181,9 +182,11 @@ export default function HomePage() {
     loading: shiftChangesLoading,
     reload: reloadShiftChanges,
     addRecord: addShiftChange,
+    addRecords: addShiftChanges,
     updateRecord: updateShiftChange,
     deleteRecord: deleteShiftChange,
     loadGroup: loadShiftChangeGroup,
+    loadRecord: loadShiftChangeRecord,
     linkCompensatoryLeave: linkShiftChangeCompensatoryLeave,
   } = useShiftChanges()
 
@@ -298,6 +301,27 @@ export default function HomePage() {
     await reloadEvents({ silent: true })
   }
 
+  // ── シフト変更の保存・削除後は、自動登録の予定が変わるためカレンダーも再取得する ──
+  const handleAddShiftChange = async (input: CreateShiftChangeInput) => {
+    const saved = await addShiftChange(input)
+    await reloadEvents({ silent: true })
+    return saved
+  }
+  const handleAddShiftChanges = async (inputs: Parameters<typeof addShiftChanges>[0]) => {
+    const saved = await addShiftChanges(inputs)
+    await reloadEvents({ silent: true })
+    return saved
+  }
+  const handleUpdateShiftChange = async (id: string, input: CreateShiftChangeInput) => {
+    const saved = await updateShiftChange(id, input)
+    await reloadEvents({ silent: true })
+    return saved
+  }
+  const handleDeleteShiftChange = async (id: string) => {
+    await deleteShiftChange(id)
+    await reloadEvents({ silent: true })
+  }
+
   const handleDismissMigration = () => {
     dismissMigration()
     setShowMigration(false)
@@ -327,6 +351,9 @@ export default function HomePage() {
   const [announcementAdminOpen, setAnnouncementAdminOpen] = useState(false)
   const [shiftManagerOpen, setShiftManagerOpen] = useState(false)
   const [shiftChangeManagerOpen, setShiftChangeManagerOpen] = useState(false)
+  // 自動登録の予定（表示専用画面）と、そこから開くシフト変更の記録
+  const [shiftChangeEvent, setShiftChangeEvent] = useState<ScheduleEvent | null>(null)
+  const [shiftChangeOpenRecordId, setShiftChangeOpenRecordId] = useState<string | null>(null)
   const [meetingPlanOpen, setMeetingPlanOpen] = useState(false)
   const [leaderManagerOpen, setLeaderManagerOpen] = useState(false)
   const [rounderManagerOpen, setRounderManagerOpen] = useState(false)
@@ -382,6 +409,11 @@ export default function HomePage() {
   }, [currentDate])
 
   const openEdit = useCallback((event: ScheduleEvent) => {
+    // シフト変更から自動登録した予定は編集画面を開かず、表示専用の画面を出す
+    if (event.shiftChangeRecordId) {
+      setShiftChangeEvent(event)
+      return
+    }
     setEditingEvent(event)
     setModalDate(undefined)
     setEventModalOpen(true)
@@ -643,13 +675,30 @@ export default function HomePage() {
         records={shiftChangeRecords}
         loading={shiftChangesLoading}
         facilities={allFacilities}
+        managers={managers}
+        staffMembers={allStaffMembers}
         onClose={() => setShiftChangeManagerOpen(false)}
-        onAdd={addShiftChange}
-        onUpdate={updateShiftChange}
-        onDelete={deleteShiftChange}
+        onAdd={handleAddShiftChange}
+        onAddBatch={handleAddShiftChanges}
+        onUpdate={handleUpdateShiftChange}
+        onDelete={handleDeleteShiftChange}
         onReload={reloadShiftChanges}
         onLoadRelatedGroup={loadShiftChangeGroup}
         onLinkCompensatoryLeave={linkShiftChangeCompensatoryLeave}
+        openRecordId={shiftChangeOpenRecordId}
+        onLoadRecord={loadShiftChangeRecord}
+        onOpenRecordHandled={() => setShiftChangeOpenRecordId(null)}
+      />
+
+      {/* シフト変更から自動登録した予定（表示専用） */}
+      <ShiftChangeEventInfo
+        event={shiftChangeEvent}
+        onClose={() => setShiftChangeEvent(null)}
+        onOpenShiftChange={recordId => {
+          setShiftChangeEvent(null)
+          setShiftChangeOpenRecordId(recordId)
+          setShiftChangeManagerOpen(true)
+        }}
       />
 
       {/* シフト表管理 */}
