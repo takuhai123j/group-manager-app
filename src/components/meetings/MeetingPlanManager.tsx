@@ -9,7 +9,7 @@ import {
   type MeetingCellStatus,
 } from '@/lib/meetingPlan'
 import { MEETING_TYPE_LABELS } from '@/lib/types'
-import { buildAssigneeCandidates } from '@/lib/meetingAssignee'
+import { buildAssigneeCandidates, assigneeKey, parseAssigneeKey } from '@/lib/meetingAssignee'
 import type { MeetingNotifyResult } from '@/services/meetingNotifyService'
 import type {
   Facility, GroupManager, StaffMember, MeetingAssignee, Meeting, MeetingFrequency, MeetingType, MeetingMinute,
@@ -113,7 +113,9 @@ export function MeetingPlanManager({
   const [tab, setTab] = useState<Tab>('plan')
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [selectedManagerId, setSelectedManagerId] = useState('')
+  // 表示対象（'' = 全施設、それ以外は assigneeKey 形式 'group_manager:<id>' / 'staff_member:<id>'）。
+  // G長とリーダーは別マスタでIDだけでは区別できないため、MT担当者と同じキー形式で持つ
+  const [selectedTargetKey, setSelectedTargetKey] = useState('')
   // スマホ（sm未満）ではダッシュボードを初期状態で折りたたみ、年間計画表をすぐ見せる。PCは常に表示
   const [mobileDashboardOpen, setMobileDashboardOpen] = useState(false)
   // MT予定確定通知の結果表示（保存自体は完了している前提。通知だけの成否を伝える）。
@@ -158,10 +160,21 @@ export function MeetingPlanManager({
 
   const lookup = useMemo(() => buildMeetingLookup(meetings), [meetings])
 
-  // G長別絞り込み（全施設 or 選択中G長の担当施設のみ）。
-  // group_manager_facilities（既存構造）はそのまま、表示側でのみ絞り込む
-  const visibleFacilityIds = selectedManagerId
-    ? new Set(managerFacilities[selectedManagerId] ?? [])
+  // 担当者別絞り込み（全施設 or 選択中のG長・主任／リーダーの担当施設のみ）。
+  //   G長・主任: group_manager_facilities / リーダー: staff_member_facilities
+  // どちらも既存構造はそのまま、表示側でのみ絞り込む。
+  // 選択中の人が無効化・削除されて候補から消えた場合は全施設表示に戻す
+  const selectedTarget = parseAssigneeKey(selectedTargetKey)
+  const selectedTargetActive = selectedTarget?.type === 'group_manager'
+    ? activeManagers.some(m => m.id === selectedTarget.id)
+    : selectedTarget?.type === 'staff_member'
+      ? activeLeaders.some(l => l.id === selectedTarget.id && l.role === 'leader')
+      : false
+  const effectiveTarget = selectedTargetActive ? selectedTarget : null
+  const visibleFacilityIds = effectiveTarget
+    ? new Set(
+        (effectiveTarget.type === 'group_manager' ? managerFacilities : leaderFacilities)[effectiveTarget.id] ?? []
+      )
     : null
   const visibleFacilities = visibleFacilityIds
     ? facilities.filter(f => visibleFacilityIds.has(f.id))
@@ -349,18 +362,33 @@ export function MeetingPlanManager({
               <MeetingMinutesHistoryPanel facilities={visibleFacilities} year={year} />
             ) : (
               <div className="p-3">
-                {/* G長別絞り込み */}
+                {/* 担当者別絞り込み（G長・主任 / リーダー） */}
                 <div className="flex items-center gap-2 mb-3">
                   <label className="text-xs text-gray-500 flex-shrink-0">表示対象</label>
                   <select
-                    value={selectedManagerId}
-                    onChange={e => setSelectedManagerId(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={effectiveTarget ? selectedTargetKey : ''}
+                    onChange={e => setSelectedTargetKey(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0 max-w-full"
                   >
                     <option value="">全施設</option>
-                    {activeManagers.map(m => (
-                      <option key={m.id} value={m.id}>{m.name}（担当施設のみ）</option>
-                    ))}
+                    {activeManagers.length > 0 && (
+                      <optgroup label="G長・主任">
+                        {activeManagers.map(m => (
+                          <option key={m.id} value={assigneeKey({ type: 'group_manager', id: m.id })}>
+                            {m.name}（担当施設のみ）
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {activeLeaders.length > 0 && (
+                      <optgroup label="リーダー">
+                        {activeLeaders.map(l => (
+                          <option key={l.id} value={assigneeKey({ type: 'staff_member', id: l.id })}>
+                            {l.name}（担当施設のみ）
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -385,7 +413,11 @@ export function MeetingPlanManager({
 
                 {visibleFacilities.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-12">
-                    {selectedManagerId ? 'このG長の担当施設が設定されていません' : '有効な施設がありません'}
+                    {effectiveTarget
+                      ? effectiveTarget.type === 'staff_member'
+                        ? 'このリーダーの担当施設が設定されていません'
+                        : 'このG長・主任の担当施設が設定されていません'
+                      : '有効な施設がありません'}
                   </p>
                 ) : (
                   // 計画表は縦横ともこの枠内でスクロールする（月ヘッダーを sticky top で固定するため、
