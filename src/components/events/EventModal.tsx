@@ -20,6 +20,8 @@ interface EventModalProps {
   /** 担当候補にするスタッフ（リーダー・ラウンダー・現場社員）。無効化済みの人も含めて渡す */
   staffMembers: StaffMember[]
   managerFacilities: Record<string, string[]>
+  /** スタッフの担当施設（staff_member_facilities。staffMemberId → facilityIds）。役職を問わず使う */
+  staffMemberFacilities: Record<string, string[]>
   preselectedLeaderId?: string
   preselectedStaffMemberId?: string
   onClose: () => void
@@ -117,6 +119,7 @@ export function EventModal({
   allManagers,
   staffMembers,
   managerFacilities,
+  staffMemberFacilities,
   preselectedLeaderId,
   preselectedStaffMemberId,
   onClose,
@@ -406,9 +409,14 @@ export function EventModal({
     setErrors(prev => ({ ...prev, groupLeaderId: undefined }))
   }
 
-  const defaultFacilityIds = form.groupLeaderId
-    ? (managerFacilities[form.groupLeaderId] ?? [])
-    : []
+  // 選択中の担当者の担当施設を施設欄の上部に出す（担当者を変えると毎回ここで作り直される）。
+  //   G長・主任: group_manager_facilities / スタッフ（全役職）: staff_member_facilities
+  // 担当施設が未設定なら従来どおり全施設を並べる。並び替えるだけで施設の選択値は変えない
+  const defaultFacilityIds = form.staffMemberId
+    ? (staffMemberFacilities[form.staffMemberId] ?? [])
+    : form.groupLeaderId
+      ? (managerFacilities[form.groupLeaderId] ?? [])
+      : []
   const defaultFacilities = facilities.filter(f => defaultFacilityIds.includes(f.id))
   const otherFacilities = facilities.filter(f => !defaultFacilityIds.includes(f.id))
   const isOutsideSelected = !!form.facilityId

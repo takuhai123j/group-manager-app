@@ -197,7 +197,7 @@ export default function HomePage() {
     moveDown: moveLeaderDown,
   } = useStaffMembers('leader')
 
-  // リーダーの担当施設（staff_member_facilities）。G長の useManagerFacilities とは独立
+  // スタッフの担当施設（staff_member_facilities。全役職の行を読み込む。編集UIは当面リーダーのみ）。G長の useManagerFacilities とは独立
   const {
     memberFacilities: leaderFacilities,
     setFacilities: setLeaderFacilities,
@@ -608,6 +608,7 @@ export default function HomePage() {
         allManagers={managers}
         staffMembers={allStaffMembers}
         managerFacilities={managerFacilities}
+        staffMemberFacilities={leaderFacilities}
         preselectedLeaderId={preselectedLeaderId}
         preselectedStaffMemberId={preselectedStaffMemberId}
         onClose={closeEventModal}
