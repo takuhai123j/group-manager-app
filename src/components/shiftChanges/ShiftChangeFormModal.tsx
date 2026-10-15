@@ -49,6 +49,8 @@ type DetailDraft = {
   calendarTarget: MeetingAssigneeRef | null
   startTime: string
   endTime: string
+  // 名前から反映先を提案するか（新しい明細・名前を書き換えた明細だけ。保存済みの「反映しない」は保つ）
+  suggestTarget: boolean
 }
 
 type CompensatoryLeaveTiming = 'now' | 'later'
@@ -89,6 +91,7 @@ const EMPTY_DETAIL: DetailDraft = {
   calendarTarget: null,
   startTime: '',
   endTime: '',
+  suggestTarget: true,
 }
 
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
@@ -151,6 +154,16 @@ function buildChangeDetail(d: DayPersonDraft): string {
   return parts.join(' ') || '（未入力）'
 }
 
+// 振休日の追加記録（振休を取る人・その日の代替出勤者）は反映先を選ぶ欄がないため、カレンダーには反映しない
+function CompensatoryCalendarNote() {
+  return (
+    <p className="text-xs text-purple-900 bg-white/70 border border-purple-200 rounded-md px-2 py-1.5">
+      振休日の記録（振休・振休日の代替出勤者）は、カレンダーに自動反映されません。
+      反映したい場合は、登録後にシフト変更の一覧からその記録を開き、「カレンダーに反映」で本人を選んで保存してください。
+    </p>
+  )
+}
+
 const MODE_LABELS: Record<DateMode, string> = {
   single: '単日',
   range: '期間',
@@ -208,6 +221,8 @@ export function ShiftChangeFormModal({
   // ── 確認ダイアログ ──
   const [showConfirm, setShowConfirm] = useState(false)
   const [pendingInputs, setPendingInputs] = useState<(CreateShiftChangeInput & { id: string })[]>([])
+  // 確認画面で「振休日を同時に設定」した追加記録を見分ける（カレンダーには反映しない旨を出す）
+  const [compensatoryInputIds, setCompensatoryInputIds] = useState<Set<string>>(new Set())
 
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -264,6 +279,7 @@ export function ShiftChangeFormModal({
               calendarTarget: d.calendarTarget,
               startTime: d.startTime ?? '',
               endTime: d.endTime ?? '',
+              suggestTarget: false,
             }))
           : [{ ...EMPTY_DETAIL }]
       )
@@ -472,7 +488,8 @@ export function ShiftChangeFormModal({
       }
       onClose()
     } catch (e) {
-      setError(shiftChangeErrorMessage(e, '保存に失敗しました'))
+      // 通信が切れた場合は保存できたかどうか画面側では分からないが、同じ内容で保存し直しても二重にはならない
+      setError(shiftChangeErrorMessage(e, '保存を確認できませんでした。もう一度「保存」を押してください（同じ内容なら二重に登録されません）'))
     } finally {
       setSaving(false)
     }
@@ -584,6 +601,7 @@ export function ShiftChangeFormModal({
     })
 
     setPendingInputs([...inputs, ...compensatoryInputs])
+    setCompensatoryInputIds(new Set(compensatoryInputs.map(c => c.id)))
     setError(null)
     setShowConfirm(true)
   }
@@ -766,6 +784,9 @@ export function ShiftChangeFormModal({
                         <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">振休</span>
                       )}
                     </div>
+                    {compensatoryInputIds.has(inp.id) && (
+                      <p className="pl-1 text-xs text-purple-800">この振休日の記録はカレンダーに自動反映されません</p>
+                    )}
                     {inp.details.map((det, i) => (
                       <div key={i} className="flex items-center gap-2 pl-1 flex-wrap">
                         <span className="text-blue-700 text-xs flex-shrink-0">{det.employeeName}</span>
@@ -873,7 +894,7 @@ export function ShiftChangeFormModal({
                     <div className="mb-2.5">
                       <label className="block text-xs font-medium text-gray-700 mb-1">対象者 <span className="text-red-500">*</span></label>
                       <input type="text" value={d.employeeName}
-                        onChange={e => updateDetail(i, { employeeName: e.target.value })}
+                        onChange={e => updateDetail(i, { employeeName: e.target.value, suggestTarget: true })}
                         placeholder="例：山田パート"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
@@ -903,6 +924,7 @@ export function ShiftChangeFormModal({
                         employeeName={d.employeeName}
                         value={d.calendarTarget}
                         candidates={calendarCandidates}
+                        suggest={d.suggestTarget}
                         onChange={target => updateDetail(i, target ? { calendarTarget: target } : { calendarTarget: null, startTime: '', endTime: '' })}
                       />
                       {d.calendarTarget && (
@@ -1000,6 +1022,7 @@ export function ShiftChangeFormModal({
                   {linkingDetailId && (
                     <div className="mt-3 p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-2">
                       <p className="text-xs font-semibold text-purple-800">振休日を設定</p>
+                      <CompensatoryCalendarNote />
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">振休日 <span className="text-red-500">*</span></label>
                         <input type="date" value={linkForm.date}
@@ -1328,6 +1351,7 @@ export function ShiftChangeFormModal({
                                   </div>
                                   {p.compensatoryLeaveTiming === 'now' && (
                                     <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
+                                      <CompensatoryCalendarNote />
                                       <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">振休日 <span className="text-red-500">*</span></label>
                                         <input type="date" value={p.compensatoryLeaveDate}

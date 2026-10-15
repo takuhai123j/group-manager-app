@@ -15,17 +15,23 @@ interface Props {
   value: MeetingAssigneeRef | null
   candidates: CalendarCandidate[]
   onChange: (value: MeetingAssigneeRef | null) => void
+  // 名前から候補を提案するか。保存済みの明細を開いたときは false にして、
+  // 前回「反映しない」で保存した状態をそのまま保つ（対象者名を書き換えたら親が true に戻す）
+  suggest?: boolean
 }
 
 const GROUP_ORDER = ['G長・主任', 'リーダー', 'ラウンダー', '現場社員']
 
-export function CalendarTargetField({ employeeName, value, candidates, onChange }: Props) {
-  // 「違う」を押した名前には、同じ名前のあいだ提案を出さない
+export function CalendarTargetField({ employeeName, value, candidates, onChange, suggest = true }: Props) {
+  // 「違う」を押した、または一覧から自分で選んだ（「反映しない」を含む）名前には、同じ名前のあいだ提案を出さない
   const [dismissedName, setDismissedName] = useState<string | null>(null)
 
   const nameKey = normalizePersonName(employeeName)
-  const suggestion = !value ? suggestCalendarTarget(employeeName, candidates) : null
-  const showSuggestion = !!suggestion && dismissedName !== nameKey
+  // 提案を出さない名前の記録は入力どおり（空白・全角半角の違いだけ無視）で持つ。役職名を除いた名前で持つと、
+  // 「井上リーダー」で断った後に「井上G長」へ書き換えても提案が出なくなるため
+  const typedKey = employeeName.normalize('NFKC').replace(/\s+/g, '')
+  const suggestion = suggest && !value ? suggestCalendarTarget(employeeName, candidates) : null
+  const showSuggestion = !!suggestion && dismissedName !== typedKey
   const selected = value ? candidates.find(c => sameTarget(c, value)) ?? null : null
   const nameMismatch = !!selected && !!nameKey && normalizePersonName(selected.name) !== nameKey
 
@@ -40,7 +46,7 @@ export function CalendarTargetField({ employeeName, value, candidates, onChange 
       </label>
       <select
         value={targetKey(value)}
-        onChange={e => onChange(parseTargetKey(e.target.value))}
+        onChange={e => { setDismissedName(typedKey); onChange(parseTargetKey(e.target.value)) }}
         className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
       >
         <option value="">反映しない</option>
@@ -66,7 +72,7 @@ export function CalendarTargetField({ employeeName, value, candidates, onChange 
             </button>
             <button
               type="button"
-              onClick={() => setDismissedName(nameKey)}
+              onClick={() => setDismissedName(typedKey)}
               className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
             >
               違う
