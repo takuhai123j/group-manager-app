@@ -91,6 +91,27 @@ export function CalendarTargetField({ employeeName, value, candidates, onChange,
   )
 }
 
+// 時刻の選択肢（00:00〜23:45 の15分刻み）
+const QUARTER_TIME_SLOTS = Array.from({ length: 96 }, (_, i) =>
+  `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`)
+
+// 保存済みの時刻が15分刻みでない場合（変更前に入力したもの）も、編集時にそのまま保てるよう現在値として選択肢に含める
+const withCurrentTime = (current: string) =>
+  !current || QUARTER_TIME_SLOTS.includes(current) ? QUARTER_TIME_SLOTS : [...QUARTER_TIME_SLOTS, current].sort()
+
+function CalendarTimeSelect({ value, label, onChange }: { value: string; label: string; onChange: (value: string) => void }) {
+  return (
+    <select
+      value={value} aria-label={label}
+      onChange={e => onChange(e.target.value)}
+      className="min-w-0 flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    >
+      <option value="">--:--</option>
+      {withCurrentTime(value).map(t => <option key={t} value={t}>{t}</option>)}
+    </select>
+  )
+}
+
 // 反映先がある場合の時刻欄（任意。両方空なら終日）
 export function CalendarTimeFields({
   startTime, endTime, onChange,
@@ -102,20 +123,12 @@ export function CalendarTimeFields({
   return (
     <div>
       <label className="block text-xs font-medium text-gray-700 mb-1">
-        カレンダーの時刻 <span className="text-gray-400 font-normal">（任意・未入力なら終日）</span>
+        カレンダーの時刻 <span className="text-gray-400 font-normal">（任意・15分単位・未入力なら終日）</span>
       </label>
       <div className="flex items-center gap-1.5">
-        <input
-          type="time" step={300} value={startTime} aria-label="開始時刻"
-          onChange={e => onChange(e.target.value, endTime)}
-          className="min-w-0 flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
+        <CalendarTimeSelect value={startTime} label="開始時刻" onChange={v => onChange(v, endTime)} />
         <span className="text-sm text-gray-500 flex-shrink-0">〜</span>
-        <input
-          type="time" step={300} value={endTime} aria-label="終了時刻"
-          onChange={e => onChange(startTime, e.target.value)}
-          className="min-w-0 flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
+        <CalendarTimeSelect value={endTime} label="終了時刻" onChange={v => onChange(startTime, v)} />
         {(startTime || endTime) && (
           <button
             type="button"
