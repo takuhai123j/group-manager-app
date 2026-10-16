@@ -133,7 +133,7 @@ export function CalendarTimeFields({
           <button
             type="button"
             onClick={() => onChange('', '')}
-            className="flex-shrink-0 px-2 py-1.5 rounded-lg text-xs border border-gray-300 text-gray-600 hover:bg-gray-50"
+            className="flex-shrink-0 whitespace-nowrap px-2 py-1.5 rounded-lg text-xs border border-gray-300 text-gray-600 hover:bg-gray-50"
           >
             終日にする
           </button>
