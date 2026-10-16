@@ -184,6 +184,10 @@ export interface ShiftChangeDetail {
   calendarTarget: MeetingAssigneeRef | null
   startTime: string | null
   endTime: string | null
+  // 変更後担当（replacementName の人）の反映先と時刻。元の対象者とは独立して設定する
+  replacementCalendarTarget: MeetingAssigneeRef | null
+  replacementStartTime: string | null
+  replacementEndTime: string | null
 }
 
 export interface ShiftChangeRecord {
@@ -213,6 +217,9 @@ export type CreateShiftChangeDetailInput = {
   calendarTarget?: MeetingAssigneeRef | null
   startTime?: string | null
   endTime?: string | null
+  replacementCalendarTarget?: MeetingAssigneeRef | null
+  replacementStartTime?: string | null
+  replacementEndTime?: string | null
 }
 
 export type CreateShiftChangeInput = {

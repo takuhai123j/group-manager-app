@@ -335,6 +335,10 @@ export type Database = {
           calendar_staff_member_id: string | null
           start_time: string | null
           end_time: string | null
+          replacement_calendar_group_manager_id: string | null
+          replacement_calendar_staff_member_id: string | null
+          replacement_start_time: string | null
+          replacement_end_time: string | null
         }
         Insert: {
           id?: string

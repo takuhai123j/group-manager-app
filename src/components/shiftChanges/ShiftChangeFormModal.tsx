@@ -51,6 +51,13 @@ type DetailDraft = {
   endTime: string
   // 名前から反映先を提案するか（新しい明細・名前を書き換えた明細だけ。保存済みの「反映しない」は保つ）
   suggestTarget: boolean
+  // 変更後担当（代わりに入る人）の反映先と時刻。元の対象者とは独立して設定する
+  replacementCalendarTarget: MeetingAssigneeRef | null
+  replacementStartTime: string
+  replacementEndTime: string
+  suggestReplacementTarget: boolean
+  // 「＋変更後担当を入力」で欄を開いたか（交代出勤・入力済みのときは常に開く）
+  showReplacement: boolean
 }
 
 type CompensatoryLeaveTiming = 'now' | 'later'
@@ -72,6 +79,10 @@ type DayPersonDraft = {
   calendarTarget: MeetingAssigneeRef | null
   startTime: string
   endTime: string
+  // 変更後担当の反映先と時刻（日付ごと。変更後担当の名前がある日だけ使う）
+  replacementCalendarTarget: MeetingAssigneeRef | null
+  replacementStartTime: string
+  replacementEndTime: string
 }
 
 type DayDraft = {
@@ -93,6 +104,11 @@ const EMPTY_DETAIL: DetailDraft = {
   startTime: '',
   endTime: '',
   suggestTarget: true,
+  replacementCalendarTarget: null,
+  replacementStartTime: '',
+  replacementEndTime: '',
+  suggestReplacementTarget: true,
+  showReplacement: false,
 }
 
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
@@ -110,6 +126,9 @@ const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
   calendarTarget: null,
   startTime: '',
   endTime: '',
+  replacementCalendarTarget: null,
+  replacementStartTime: '',
+  replacementEndTime: '',
 }
 
 const EMPTY_FORM = { facilityId: '', targetDate: '', reason: '', handledBy: '', memo: '' }
@@ -143,6 +162,26 @@ function formatDateSlash(s: string): string {
   if (!s) return ''
   const [y, m, d] = s.split('-')
   return `${y}/${m}/${d}`
+}
+
+// 入力した名前の比較用（空白・全角半角の違いだけを無視する）。名前を別人に変えたら、前の名前で選んだ反映先を外すのに使う
+function typedNameKey(s: string | null | undefined): string {
+  return (s ?? '').normalize('NFKC').replace(/\s+/g, '')
+}
+
+// 保存用: 変更後担当の反映先と時刻（名前がない・反映先がないときは送らない）
+function replacementInput(name: string | null, target: MeetingAssigneeRef | null, startTime: string, endTime: string) {
+  const t = name?.trim() ? target : null
+  return {
+    replacementCalendarTarget: t,
+    replacementStartTime: t && startTime ? startTime : null,
+    replacementEndTime: t && endTime ? endTime : null,
+  }
+}
+
+// 単日の明細で変更後担当の欄を開くか（交代出勤・入力済み・「＋変更後担当を入力」を押した）
+function replacementOpen(d: DetailDraft): boolean {
+  return d.showReplacement || d.changeType === '交代出勤' || !!d.replacementName?.trim() || !!d.replacementCalendarTarget
 }
 
 function buildChangeDetail(d: DayPersonDraft): string {
@@ -280,6 +319,11 @@ export function ShiftChangeFormModal({
               startTime: d.startTime ?? '',
               endTime: d.endTime ?? '',
               suggestTarget: false,
+              replacementCalendarTarget: d.replacementCalendarTarget,
+              replacementStartTime: d.replacementStartTime ?? '',
+              replacementEndTime: d.replacementEndTime ?? '',
+              suggestReplacementTarget: false,
+              showReplacement: false,
             }))
           : [{ ...EMPTY_DETAIL }]
       )
@@ -390,14 +434,53 @@ export function ShiftChangeFormModal({
   // 対象者名を別の名前に変えたら、前の名前で選んだ反映先・時刻を全日から外す（別人のカレンダーに入らないように）。
   // 空白・全角半角の違いだけなら同じ人として残す
   const updatePersonName = (i: number, val: string) => {
-    const nameKey = (s: string) => s.normalize('NFKC').replace(/\s+/g, '')
-    if (nameKey(val) !== nameKey(periodEmployeeNames[i] ?? '')) {
+    if (typedNameKey(val) !== typedNameKey(periodEmployeeNames[i])) {
       setDayDrafts(prev => prev.map(d => ({
         ...d,
         persons: d.persons.map((p, pi) => pi === i && p.calendarTarget ? { ...p, calendarTarget: null, startTime: '', endTime: '' } : p),
       })))
     }
     setPeriodEmployeeNames(prev => prev.map((n, idx) => idx === i ? val : n))
+  }
+
+  // ── 変更後担当の反映先（元の対象者とは独立） ──
+  const CLEAR_REPLACEMENT_TARGET = { replacementCalendarTarget: null, replacementStartTime: '', replacementEndTime: '' } as const
+  // 単日: 変更後担当の名前を別人に変えたら、前の名前で選んだ反映先・時刻を外して提案し直す
+  const updateDetailReplacementName = (i: number, val: string) =>
+    setDetails(prev => prev.map((d, idx) => idx !== i ? d : {
+      ...d,
+      replacementName: val,
+      suggestReplacementTarget: true,
+      ...(typedNameKey(val) !== typedNameKey(d.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
+    }))
+  // 期間・複数日: 日ごとの変更後担当の名前（別人に変えたらその日の反映先・時刻を外す）
+  const updateDayReplacementName = (dayIdx: number, personIdx: number, val: string) =>
+    setDayDrafts(prev => prev.map((d, di) => di !== dayIdx ? d : {
+      ...d,
+      persons: d.persons.map((p, pi) => pi !== personIdx ? p : {
+        ...p,
+        replacementName: val,
+        ...(typedNameKey(val) !== typedNameKey(p.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
+      }),
+    }))
+  const updateDayReplacementTarget = (dayIdx: number, personIdx: number, target: MeetingAssigneeRef | null) =>
+    updateDayPerson(dayIdx, personIdx, target ? { replacementCalendarTarget: target } : CLEAR_REPLACEMENT_TARGET)
+  // ある日に選んだ変更後担当の反映先を、同じ対象者で変更後担当の名前が同じ日にまとめて設定する（時刻は日ごとのまま）。
+  // 別の人を個別に選んである日を上書きする場合だけ確認する
+  const copyReplacementTargetToSameNameDays = (personIdx: number, name: string, target: MeetingAssigneeRef) => {
+    const sameName = (p: DayPersonDraft | undefined) => !!p && typedNameKey(p.replacementName) === typedNameKey(name)
+    const overwritten = dayDrafts.filter(d => {
+      const p = d.persons[personIdx]
+      return sameName(p) && p.replacementCalendarTarget && targetKey(p.replacementCalendarTarget) !== targetKey(target)
+    })
+    if (overwritten.length > 0) {
+      const list = overwritten.map(d => `${formatDateJP(d.date)}：${targetName(d.persons[personIdx].replacementCalendarTarget)}`).join('\n')
+      if (!confirm(`次の日は別の人の反映先を選んでいます。「${targetName(target)}」に上書きしますか？\n\n${list}`)) return
+    }
+    setDayDrafts(prev => prev.map(d => ({
+      ...d,
+      persons: d.persons.map((p, pi) => pi === personIdx && sameName(p) ? { ...p, replacementCalendarTarget: target } : p),
+    })))
   }
 
   const applyBulk = () => {
@@ -413,12 +496,15 @@ export function ShiftChangeFormModal({
         supportFromFacilityId: bulk.isExternalSupport ? bulk.supportFromFacilityId : '',
         startTime: bulk.startTime,
         endTime: bulk.endTime,
+        // 一括で変更後担当を別の人にした日は、前の変更後担当の反映先を外す
+        ...(typedNameKey(bulk.replacementName) !== typedNameKey(existing.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
       })),
     })))
   }
 
-  // カレンダー反映先の候補（有効な人＋編集中の明細で指定済みの人）と表示名
-  const calendarCandidates = buildCalendarCandidates(managers, staffMembers, editing?.details.map(d => d.calendarTarget) ?? [])
+  // カレンダー反映先の候補（有効な人＋編集中の明細で指定済みの人。変更後担当の反映先も含む）と表示名
+  const calendarCandidates = buildCalendarCandidates(managers, staffMembers,
+    editing?.details.flatMap(d => [d.calendarTarget, d.replacementCalendarTarget]) ?? [])
   const targetName = (t: MeetingAssigneeRef | null | undefined) =>
     calendarCandidates.find(c => targetKey(c) === targetKey(t))?.name ?? ''
   const hasDuplicateTarget = (targets: (MeetingAssigneeRef | null | undefined)[]) => {
@@ -453,9 +539,14 @@ export function ShiftChangeFormModal({
         const timeError = validateCalendarTime(details[i].startTime, details[i].endTime)
         if (timeError) { setError(`対象者${i + 1}：${timeError}`); return }
       }
+      if (details[i].replacementCalendarTarget) {
+        if (!details[i].replacementName?.trim()) { setError(`対象者${i + 1}：変更後担当の名前を入力してください`); return }
+        const timeError = validateCalendarTime(details[i].replacementStartTime, details[i].replacementEndTime)
+        if (timeError) { setError(`対象者${i + 1}の変更後担当：${timeError}`); return }
+      }
     }
-    if (hasDuplicateTarget(details.map(d => d.calendarTarget))) {
-      setError('同じ人のカレンダーが2回指定されています（1人につき1つにしてください）'); return
+    if (hasDuplicateTarget(details.flatMap(d => [d.calendarTarget, d.replacementCalendarTarget]))) {
+      setError('同じ人のカレンダーが2回指定されています（元の対象者・変更後担当を合わせて1人1回にしてください）'); return
     }
     setSaving(true); setError(null); setEmailWarning(null); setEmailSuccess(null)
     try {
@@ -472,14 +563,15 @@ export function ShiftChangeFormModal({
           changeDetail: d.changeDetail,
           isExternalSupport: d.isExternalSupport,
           supportFromFacilityId: d.isExternalSupport ? d.supportFromFacilityId || null : null,
-          // 複数日入力由来の値は編集UIにないため、既存値をそのまま引き継ぐ
+          // 変更元シフト・振休の状態は単日の編集UIにないため、既存値をそのまま引き継ぐ
           originalShift: d.originalShift,
-          replacementName: d.replacementName,
-          replacementOriginalShift: d.replacementOriginalShift,
+          replacementName: d.replacementName?.trim() ? d.replacementName.trim() : null,
+          replacementOriginalShift: d.replacementOriginalShift?.trim() ? d.replacementOriginalShift.trim() : null,
           compensatoryLeaveStatus: d.compensatoryLeaveStatus,
           calendarTarget: d.calendarTarget,
           startTime: d.calendarTarget && d.startTime ? d.startTime : null,
           endTime: d.calendarTarget && d.endTime ? d.endTime : null,
+          ...replacementInput(d.replacementName, d.replacementCalendarTarget, d.replacementStartTime, d.replacementEndTime),
         })),
         relatedChangeGroupId: editing?.relatedChangeGroupId ?? null,
       })
@@ -538,8 +630,8 @@ export function ShiftChangeFormModal({
       if (!periodEmployeeNames[i].trim()) { setError(`対象者${i + 1}の名前を入力してください`); return }
     }
     for (const d of dayDrafts) {
-      if (hasDuplicateTarget(d.persons.map(p => p.calendarTarget))) {
-        setError(`${formatDateJP(d.date)}：同じ人のカレンダーが2回指定されています（1日に1人1つにしてください）`); return
+      if (hasDuplicateTarget(d.persons.flatMap(p => [p.calendarTarget, p.replacementName.trim() ? p.replacementCalendarTarget : null]))) {
+        setError(`${formatDateJP(d.date)}：同じ人のカレンダーが2回指定されています（元の対象者・変更後担当を合わせて1日に1人1回にしてください）`); return
       }
       for (const [personIdx, p] of d.persons.entries()) {
         if (p.replacementName.trim() && p.wantsCompensatoryLeave && p.compensatoryLeaveTiming === 'now' && !p.compensatoryLeaveDate) {
@@ -548,6 +640,10 @@ export function ShiftChangeFormModal({
         if (p.calendarTarget) {
           const timeError = validateCalendarTime(p.startTime, p.endTime)
           if (timeError) { setError(`${formatDateJP(d.date)}（${periodEmployeeNames[personIdx].trim()}）：${timeError}`); return }
+        }
+        if (p.replacementName.trim() && p.replacementCalendarTarget) {
+          const timeError = validateCalendarTime(p.replacementStartTime, p.replacementEndTime)
+          if (timeError) { setError(`${formatDateJP(d.date)}（変更後担当 ${p.replacementName.trim()}）：${timeError}`); return }
         }
       }
     }
@@ -567,7 +663,7 @@ export function ShiftChangeFormModal({
           isExternalSupport: p.isExternalSupport,
           supportFromFacilityId: p.isExternalSupport ? p.supportFromFacilityId || null : null,
           originalShift: p.originalShift || null,
-          replacementName: p.replacementName || null,
+          replacementName: p.replacementName.trim() || null,
           replacementOriginalShift: p.replacementOriginalShift || null,
           compensatoryLeaveStatus: wantsLeave
             ? (p.compensatoryLeaveTiming === 'now' ? 'linked' as const : 'unset' as const)
@@ -575,6 +671,7 @@ export function ShiftChangeFormModal({
           calendarTarget: p.calendarTarget,
           startTime: p.calendarTarget && p.startTime ? p.startTime : null,
           endTime: p.calendarTarget && p.endTime ? p.endTime : null,
+          ...replacementInput(p.replacementName, p.replacementCalendarTarget, p.replacementStartTime, p.replacementEndTime),
         }
       })
       return {
@@ -796,6 +893,10 @@ export function ShiftChangeFormModal({
                 <div>
                   <span className="font-medium text-gray-500">カレンダー反映：</span>
                   {pendingInputs.reduce((n, inp) => n + inp.details.filter(d => d.calendarTarget).length, 0)}件
+                  {(() => {
+                    const rep = pendingInputs.reduce((n, inp) => n + inp.details.filter(d => d.replacementCalendarTarget).length, 0)
+                    return rep > 0 ? `（ほかに変更後担当の代替出勤 ${rep}件）` : null
+                  })()}
                 </div>
                 <div><span className="font-medium text-gray-500">施設：</span>{facilityName}</div>
                 <div><span className="font-medium text-gray-500">入力者：</span>{periodForm.handledBy}</div>
@@ -826,6 +927,18 @@ export function ShiftChangeFormModal({
                           </span>
                         ) : !compensatoryInputIds.has(inp.id) && (
                           <span className="text-gray-400 text-xs flex-shrink-0">カレンダー：反映しない</span>
+                        )}
+                        {det.replacementName && (
+                          <span className="w-full pl-3 text-xs">
+                            <span className="text-teal-800">変更後担当 {det.replacementName}</span>
+                            {det.replacementCalendarTarget ? (
+                              <span className="text-teal-800">
+                                {' '}→ {targetName(det.replacementCalendarTarget)}のカレンダー（代替出勤・{formatCalendarTime(det.replacementStartTime, det.replacementEndTime)}）
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">：カレンダー反映しない</span>
+                            )}
+                          </span>
                         )}
                       </div>
                     ))}
@@ -965,6 +1078,55 @@ export function ShiftChangeFormModal({
                         />
                       )}
                     </div>
+
+                    {/* 変更後担当（代わりに入る人）。全種別で入力でき、元の対象者とは別にカレンダーへ反映できる */}
+                    {replacementOpen(d) ? (
+                      <div className="mb-2.5 p-2.5 rounded-lg border border-teal-200 bg-teal-50/50 space-y-2">
+                        <p className="text-xs font-semibold text-teal-900">変更後担当（代わりに入る人） <span className="font-normal text-gray-400">（任意）</span></p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当</label>
+                            <input type="text" value={d.replacementName ?? ''}
+                              onChange={e => updateDetailReplacementName(i, e.target.value)}
+                              placeholder="例：田中パート"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当の元シフト</label>
+                            <input type="text" value={d.replacementOriginalShift ?? ''}
+                              onChange={e => updateDetail(i, { replacementOriginalShift: e.target.value })}
+                              placeholder="例：休み"
+                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                          </div>
+                        </div>
+                        {d.replacementName?.trim() ? (
+                          <>
+                            <CalendarTargetField
+                              label="変更後担当のカレンダーに反映"
+                              employeeName={d.replacementName}
+                              value={d.replacementCalendarTarget}
+                              candidates={calendarCandidates}
+                              suggest={d.suggestReplacementTarget}
+                              onChange={target => updateDetail(i, target ? { replacementCalendarTarget: target } : CLEAR_REPLACEMENT_TARGET)}
+                            />
+                            {d.replacementCalendarTarget && (
+                              <CalendarTimeFields
+                                startTime={d.replacementStartTime}
+                                endTime={d.replacementEndTime}
+                                onChange={(replacementStartTime, replacementEndTime) => updateDetail(i, { replacementStartTime, replacementEndTime })}
+                              />
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-gray-500">名前を入れると、変更後担当のカレンダーにも「代替出勤」として反映できます</p>
+                        )}
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => updateDetail(i, { showReplacement: true })}
+                        className="mb-2.5 text-xs text-teal-700 underline hover:text-teal-900">
+                        ＋ 変更後担当（代わりに入る人）を入力
+                      </button>
+                    )}
                     <div className="pt-2 border-t border-gray-200">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input type="checkbox" checked={d.isExternalSupport}
@@ -1340,7 +1502,7 @@ export function ShiftChangeFormModal({
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当</label>
                               <input type="text" value={p.replacementName}
-                                onChange={e => updateDayPerson(dayIdx, personIdx, { replacementName: e.target.value })}
+                                onChange={e => updateDayReplacementName(dayIdx, personIdx, e.target.value)}
                                 placeholder="例：田中パート"
                                 className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
@@ -1354,6 +1516,34 @@ export function ShiftChangeFormModal({
                               placeholder="例：休み、09:00～13:00、未定"
                               className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                           </div>
+
+                          {/* 変更後担当のカレンダー反映（日付ごと。元の対象者とは別に設定する） */}
+                          {p.replacementName.trim() !== '' && (
+                            <div className="mb-2.5 p-2.5 rounded-lg border border-teal-200 bg-teal-50/50 space-y-2">
+                              <CalendarTargetField
+                                label="変更後担当のカレンダーに反映"
+                                employeeName={p.replacementName}
+                                value={p.replacementCalendarTarget}
+                                candidates={calendarCandidates}
+                                onChange={target => updateDayReplacementTarget(dayIdx, personIdx, target)}
+                              />
+                              {p.replacementCalendarTarget && (
+                                <CalendarTimeFields
+                                  startTime={p.replacementStartTime}
+                                  endTime={p.replacementEndTime}
+                                  onChange={(replacementStartTime, replacementEndTime) => updateDayPerson(dayIdx, personIdx, { replacementStartTime, replacementEndTime })}
+                                />
+                              )}
+                              {p.replacementCalendarTarget && dayDrafts.some((other, oi) => oi !== dayIdx
+                                && typedNameKey(other.persons[personIdx]?.replacementName) === typedNameKey(p.replacementName)
+                                && targetKey(other.persons[personIdx]?.replacementCalendarTarget) !== targetKey(p.replacementCalendarTarget)) && (
+                                <button type="button" onClick={() => copyReplacementTargetToSameNameDays(personIdx, p.replacementName, p.replacementCalendarTarget!)}
+                                  className="text-xs text-teal-700 underline hover:text-teal-900">
+                                  変更後担当が「{p.replacementName.trim()}」の日の反映先を、すべて「{targetName(p.replacementCalendarTarget)}」にする
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           {/* 振休 */}
                           {p.replacementName.trim() !== '' && (

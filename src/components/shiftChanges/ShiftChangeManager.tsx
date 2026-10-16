@@ -301,6 +301,12 @@ export function ShiftChangeManager({
                               {personNameMap.get(targetKey(d.calendarTarget)) ?? '（不明）'}・{formatCalendarTime(d.startTime, d.endTime)}
                             </span>
                           )}
+                          {d.replacementCalendarTarget && (
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-800 border border-teal-300">
+                              <CalendarCheck size={11} />
+                              代替出勤：{personNameMap.get(targetKey(d.replacementCalendarTarget)) ?? '（不明）'}・{formatCalendarTime(d.replacementStartTime, d.replacementEndTime)}
+                            </span>
+                          )}
                           {d.compensatoryLeaveStatus === 'unset' && (
                             <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                               振休未設定

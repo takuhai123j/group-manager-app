@@ -33,10 +33,18 @@ function toDetail(row: DetailRow): ShiftChangeDetail {
         : null,
     startTime: row.start_time ?? null,
     endTime: row.end_time ?? null,
+    replacementCalendarTarget: row.replacement_calendar_group_manager_id
+      ? { type: 'group_manager', id: row.replacement_calendar_group_manager_id }
+      : row.replacement_calendar_staff_member_id
+        ? { type: 'staff_member', id: row.replacement_calendar_staff_member_id }
+        : null,
+    replacementStartTime: row.replacement_start_time ?? null,
+    replacementEndTime: row.replacement_end_time ?? null,
   }
 }
 
-// RPC（shift_change_save_batch）に渡す1件分。反映先がない明細は時刻も送らない（時刻はカレンダー用のため）
+// RPC（shift_change_save_batch）に渡す1件分。反映先がない明細は時刻も送らない（時刻はカレンダー用のため）。
+// 変更後担当の反映先は、変更後担当の名前がある明細だけ送る
 function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftChangeInput) {
   return {
     id,
@@ -50,6 +58,8 @@ function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftCh
     details: input.details.map(d => {
       const target = d.calendarTarget ?? null
       const timed = !!target && !!d.startTime && !!d.endTime
+      const repTarget = d.replacementName?.trim() ? d.replacementCalendarTarget ?? null : null
+      const repTimed = !!repTarget && !!d.replacementStartTime && !!d.replacementEndTime
       return {
         employee_name: d.employeeName,
         change_type: d.changeType,
@@ -64,6 +74,10 @@ function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftCh
         calendar_staff_member_id: target?.type === 'staff_member' ? target.id : null,
         start_time: timed ? d.startTime : null,
         end_time: timed ? d.endTime : null,
+        replacement_calendar_group_manager_id: repTarget?.type === 'group_manager' ? repTarget.id : null,
+        replacement_calendar_staff_member_id: repTarget?.type === 'staff_member' ? repTarget.id : null,
+        replacement_start_time: repTimed ? d.replacementStartTime : null,
+        replacement_end_time: repTimed ? d.replacementEndTime : null,
       }
     }),
   }

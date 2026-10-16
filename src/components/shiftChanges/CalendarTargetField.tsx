@@ -18,11 +18,13 @@ interface Props {
   // 名前から候補を提案するか。保存済みの明細を開いたときは false にして、
   // 前回「反映しない」で保存した状態をそのまま保つ（対象者名を書き換えたら親が true に戻す）
   suggest?: boolean
+  // 欄の見出し（変更後担当の欄では「変更後担当のカレンダーに反映」）
+  label?: string
 }
 
 const GROUP_ORDER = ['G長・主任', 'リーダー', 'ラウンダー', '現場社員']
 
-export function CalendarTargetField({ employeeName, value, candidates, onChange, suggest = true }: Props) {
+export function CalendarTargetField({ employeeName, value, candidates, onChange, suggest = true, label = 'カレンダーに反映' }: Props) {
   // 「違う」を押した、または一覧から自分で選んだ（「反映しない」を含む）名前には、同じ名前のあいだ提案を出さない
   const [dismissedName, setDismissedName] = useState<string | null>(null)
 
@@ -42,7 +44,7 @@ export function CalendarTargetField({ employeeName, value, candidates, onChange,
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-2.5 py-2 space-y-1.5">
       <label className="flex items-center gap-1 text-xs font-medium text-indigo-900">
-        <CalendarCheck size={13} />カレンダーに反映 <span className="text-gray-400 font-normal">（任意）</span>
+        <CalendarCheck size={13} />{label} <span className="text-gray-400 font-normal">（任意）</span>
       </label>
       <select
         value={targetKey(value)}
@@ -84,7 +86,7 @@ export function CalendarTargetField({ employeeName, value, candidates, onChange,
       {nameMismatch && selected && (
         <p className="flex items-start gap-1 text-xs text-amber-800">
           <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-          対象者名と反映先（{selected.name}）が違います。本人か確認してください
+          入力した名前（{employeeName.trim()}）と反映先（{selected.name}）が違います。本人か確認してください
         </p>
       )}
     </div>
