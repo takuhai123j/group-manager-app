@@ -371,14 +371,34 @@ export function ShiftChangeFormModal({
   // 反映先の選択。「反映しない」にしたら時刻も消す（単日と同じ）
   const updateDayPersonTarget = (dayIdx: number, personIdx: number, target: MeetingAssigneeRef | null) =>
     updateDayPerson(dayIdx, personIdx, target ? { calendarTarget: target } : { calendarTarget: null, startTime: '', endTime: '' })
-  // ある日に選んだ反映先を、同じ対象者の他の日にもまとめて設定する（時刻は日ごとの入力のまま）
-  const copyTargetToAllDays = (personIdx: number, target: MeetingAssigneeRef) =>
+  // ある日に選んだ反映先を、同じ対象者の他の日にもまとめて設定する（時刻は日ごとの入力のまま）。
+  // 別の人を個別に選んである日を上書きする場合だけ確認する（未設定の日はそのまま設定する）
+  const copyTargetToAllDays = (personIdx: number, target: MeetingAssigneeRef) => {
+    const overwritten = dayDrafts.filter(d => {
+      const current = d.persons[personIdx]?.calendarTarget
+      return current && targetKey(current) !== targetKey(target)
+    })
+    if (overwritten.length > 0) {
+      const list = overwritten.map(d => `${formatDateJP(d.date)}：${targetName(d.persons[personIdx].calendarTarget)}`).join('\n')
+      if (!confirm(`次の日は別の人の反映先を選んでいます。「${targetName(target)}」に上書きしますか？\n\n${list}`)) return
+    }
     setDayDrafts(prev => prev.map(d => ({
       ...d,
       persons: d.persons.map((p, pi) => pi === personIdx ? { ...p, calendarTarget: target } : p),
     })))
-  const updatePersonName = (i: number, val: string) =>
+  }
+  // 対象者名を別の名前に変えたら、前の名前で選んだ反映先・時刻を全日から外す（別人のカレンダーに入らないように）。
+  // 空白・全角半角の違いだけなら同じ人として残す
+  const updatePersonName = (i: number, val: string) => {
+    const nameKey = (s: string) => s.normalize('NFKC').replace(/\s+/g, '')
+    if (nameKey(val) !== nameKey(periodEmployeeNames[i] ?? '')) {
+      setDayDrafts(prev => prev.map(d => ({
+        ...d,
+        persons: d.persons.map((p, pi) => pi === i && p.calendarTarget ? { ...p, calendarTarget: null, startTime: '', endTime: '' } : p),
+      })))
+    }
     setPeriodEmployeeNames(prev => prev.map((n, idx) => idx === i ? val : n))
+  }
 
   const applyBulk = () => {
     setDayDrafts(prev => prev.map(d => ({
