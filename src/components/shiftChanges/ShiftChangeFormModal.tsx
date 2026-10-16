@@ -68,7 +68,8 @@ type DayPersonDraft = {
   compensatoryLeaveDate: string
   compensatoryLeaveDetail: string
   compensatoryLeaveReplacementName: string
-  // 個人カレンダーの時刻（対象者に反映先がある場合だけ使う）
+  // 個人カレンダーへの反映先（日付ごと・対象者ごと）と時刻（反映先がある場合だけ使う。空なら終日）
+  calendarTarget: MeetingAssigneeRef | null
   startTime: string
   endTime: string
 }
@@ -106,6 +107,7 @@ const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
   compensatoryLeaveDate: '',
   compensatoryLeaveDetail: '',
   compensatoryLeaveReplacementName: '',
+  calendarTarget: null,
   startTime: '',
   endTime: '',
 }
@@ -192,8 +194,6 @@ export function ShiftChangeFormModal({
   // ── 期間・複数日共通 ──
   const [periodForm, setPeriodForm] = useState({ facilityId: '', handledBy: '', reason: '', memo: '' })
   const [periodEmployeeNames, setPeriodEmployeeNames] = useState<string[]>([''])
-  // 対象者ごとのカレンダー反映先（periodEmployeeNames と同じ並び。全日に共通）
-  const [periodCalendarTargets, setPeriodCalendarTargets] = useState<(MeetingAssigneeRef | null)[]>([null])
   const [dayDrafts, setDayDrafts] = useState<DayDraft[]>([])
 
   // 一括入力
@@ -295,7 +295,6 @@ export function ShiftChangeFormModal({
       setNewDateInput(today)
       setPeriodForm({ facilityId: '', handledBy: '', reason: '', memo: '' })
       setPeriodEmployeeNames([''])
-      setPeriodCalendarTargets([null])
       setDayDrafts([])
       setBulk({ changeType: '欠勤', originalShift: '', replacementName: '', replacementOriginalShift: '', isExternalSupport: false, supportFromFacilityId: '', startTime: '', endTime: '' })
     }
@@ -363,16 +362,21 @@ export function ShiftChangeFormModal({
   const addPersonName = () => {
     if (periodEmployeeNames.length >= MAX_TARGETS) return
     setPeriodEmployeeNames(prev => [...prev, ''])
-    setPeriodCalendarTargets(prev => [...prev, null])
   }
   const removePersonName = (i: number) => {
     setPeriodEmployeeNames(prev => prev.filter((_, idx) => idx !== i))
-    setPeriodCalendarTargets(prev => prev.filter((_, idx) => idx !== i))
     // 日別入力の行も同じ位置を詰める（後ろの人の入力が前の人にずれないように）
     setDayDrafts(prev => prev.map(d => ({ ...d, persons: d.persons.filter((_, idx) => idx !== i) })))
   }
-  const updatePersonTarget = (i: number, target: MeetingAssigneeRef | null) =>
-    setPeriodCalendarTargets(prev => prev.map((t, idx) => idx === i ? target : t))
+  // 反映先の選択。「反映しない」にしたら時刻も消す（単日と同じ）
+  const updateDayPersonTarget = (dayIdx: number, personIdx: number, target: MeetingAssigneeRef | null) =>
+    updateDayPerson(dayIdx, personIdx, target ? { calendarTarget: target } : { calendarTarget: null, startTime: '', endTime: '' })
+  // ある日に選んだ反映先を、同じ対象者の他の日にもまとめて設定する（時刻は日ごとの入力のまま）
+  const copyTargetToAllDays = (personIdx: number, target: MeetingAssigneeRef) =>
+    setDayDrafts(prev => prev.map(d => ({
+      ...d,
+      persons: d.persons.map((p, pi) => pi === personIdx ? { ...p, calendarTarget: target } : p),
+    })))
   const updatePersonName = (i: number, val: string) =>
     setPeriodEmployeeNames(prev => prev.map((n, idx) => idx === i ? val : n))
 
@@ -513,15 +517,15 @@ export function ShiftChangeFormModal({
     for (let i = 0; i < periodEmployeeNames.length; i++) {
       if (!periodEmployeeNames[i].trim()) { setError(`対象者${i + 1}の名前を入力してください`); return }
     }
-    if (hasDuplicateTarget(periodCalendarTargets)) {
-      setError('同じ人のカレンダーが2回指定されています（1人につき1つにしてください）'); return
-    }
     for (const d of dayDrafts) {
+      if (hasDuplicateTarget(d.persons.map(p => p.calendarTarget))) {
+        setError(`${formatDateJP(d.date)}：同じ人のカレンダーが2回指定されています（1日に1人1つにしてください）`); return
+      }
       for (const [personIdx, p] of d.persons.entries()) {
         if (p.replacementName.trim() && p.wantsCompensatoryLeave && p.compensatoryLeaveTiming === 'now' && !p.compensatoryLeaveDate) {
           setError(`${formatDateJP(d.date)}の振休日を入力してください`); return
         }
-        if (periodCalendarTargets[personIdx]) {
+        if (p.calendarTarget) {
           const timeError = validateCalendarTime(p.startTime, p.endTime)
           if (timeError) { setError(`${formatDateJP(d.date)}（${periodEmployeeNames[personIdx].trim()}）：${timeError}`); return }
         }
@@ -548,9 +552,9 @@ export function ShiftChangeFormModal({
           compensatoryLeaveStatus: wantsLeave
             ? (p.compensatoryLeaveTiming === 'now' ? 'linked' as const : 'unset' as const)
             : null,
-          calendarTarget: periodCalendarTargets[idx] ?? null,
-          startTime: periodCalendarTargets[idx] && p.startTime ? p.startTime : null,
-          endTime: periodCalendarTargets[idx] && p.endTime ? p.endTime : null,
+          calendarTarget: p.calendarTarget,
+          startTime: p.calendarTarget && p.startTime ? p.startTime : null,
+          endTime: p.calendarTarget && p.endTime ? p.endTime : null,
         }
       })
       return {
@@ -769,6 +773,10 @@ export function ShiftChangeFormModal({
                   </div>
                 )}
                 <div><span className="font-medium text-gray-500">登録件数：</span>{pendingInputs.length}件</div>
+                <div>
+                  <span className="font-medium text-gray-500">カレンダー反映：</span>
+                  {pendingInputs.reduce((n, inp) => n + inp.details.filter(d => d.calendarTarget).length, 0)}件
+                </div>
                 <div><span className="font-medium text-gray-500">施設：</span>{facilityName}</div>
                 <div><span className="font-medium text-gray-500">入力者：</span>{periodForm.handledBy}</div>
                 <div><span className="font-medium text-gray-500">理由：</span>{periodForm.reason}</div>
@@ -792,10 +800,12 @@ export function ShiftChangeFormModal({
                         <span className="text-blue-700 text-xs flex-shrink-0">{det.employeeName}</span>
                         <span className="text-blue-700 text-xs flex-shrink-0">{det.changeType}</span>
                         <span className="text-blue-600 text-xs truncate">{det.changeDetail}</span>
-                        {det.calendarTarget && (
+                        {det.calendarTarget ? (
                           <span className="text-indigo-800 text-xs flex-shrink-0">
                             → {targetName(det.calendarTarget)}のカレンダー（{formatCalendarTime(det.startTime, det.endTime)}）
                           </span>
+                        ) : !compensatoryInputIds.has(inp.id) && (
+                          <span className="text-gray-400 text-xs flex-shrink-0">カレンダー：反映しない</span>
                         )}
                       </div>
                     ))}
@@ -1150,17 +1160,9 @@ export function ShiftChangeFormModal({
                           </button>
                         )}
                       </div>
-                      <CalendarTargetField
-                        employeeName={name}
-                        value={periodCalendarTargets[i] ?? null}
-                        candidates={calendarCandidates}
-                        onChange={target => updatePersonTarget(i, target)}
-                      />
                     </div>
                   ))}
-                  {periodCalendarTargets.some(Boolean) && (
-                    <p className="text-xs text-indigo-800">カレンダーの時刻は、下の「日別入力」で日ごとに入力できます（未入力なら終日）</p>
-                  )}
+                  <p className="text-xs text-indigo-800">カレンダーへの反映先と時刻は、下の「日別入力」で日ごと・対象者ごとに選べます</p>
                 </div>
                 {periodEmployeeNames.length < MAX_TARGETS && (
                   <button type="button" onClick={addPersonName}
@@ -1243,7 +1245,7 @@ export function ShiftChangeFormModal({
                         </select>
                       )}
                     </div>
-                    {periodCalendarTargets.some(Boolean) && (
+                    {dayDrafts.some(d => d.persons.some(p => p.calendarTarget)) && (
                       <div className="mb-2.5">
                         <CalendarTimeFields
                           startTime={bulk.startTime}
@@ -1267,19 +1269,31 @@ export function ShiftChangeFormModal({
                         <div key={personIdx} className={cn(personIdx > 0 && 'mt-3 pt-3 border-t border-gray-200')}>
                           <p className="text-xs font-semibold text-gray-500 mb-2">
                             {periodEmployeeNames[personIdx]?.trim() || `対象者${personIdx + 1}`}
-                            {periodCalendarTargets[personIdx] && (
-                              <span className="ml-1.5 font-normal text-indigo-700">→ {targetName(periodCalendarTargets[personIdx])}のカレンダー</span>
-                            )}
                           </p>
-                          {periodCalendarTargets[personIdx] && (
-                            <div className="mb-2.5">
+
+                          {/* カレンダーへの反映先と時刻（日付ごとに選ぶ。本人確認は単日と同じ） */}
+                          <div className="mb-2.5 space-y-2">
+                            <CalendarTargetField
+                              employeeName={periodEmployeeNames[personIdx] ?? ''}
+                              value={p.calendarTarget}
+                              candidates={calendarCandidates}
+                              onChange={target => updateDayPersonTarget(dayIdx, personIdx, target)}
+                            />
+                            {p.calendarTarget && (
                               <CalendarTimeFields
                                 startTime={p.startTime}
                                 endTime={p.endTime}
                                 onChange={(startTime, endTime) => updateDayPerson(dayIdx, personIdx, { startTime, endTime })}
                               />
-                            </div>
-                          )}
+                            )}
+                            {p.calendarTarget && dayDrafts.length > 1
+                              && dayDrafts.some(other => targetKey(other.persons[personIdx]?.calendarTarget) !== targetKey(p.calendarTarget)) && (
+                              <button type="button" onClick={() => copyTargetToAllDays(personIdx, p.calendarTarget!)}
+                                className="text-xs text-indigo-700 underline hover:text-indigo-900">
+                                全日の反映先を「{targetName(p.calendarTarget)}」にする
+                              </button>
+                            )}
+                          </div>
 
                           {/* 変更種別 */}
                           <div className="flex flex-wrap gap-1.5 mb-2.5">
