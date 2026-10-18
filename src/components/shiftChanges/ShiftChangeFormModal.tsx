@@ -1425,14 +1425,20 @@ export function ShiftChangeFormModal({
                     ) : (
                       <button type="button" onClick={() => updateDetail(i, { showReplacement: true })}
                         className="mb-2.5 text-xs text-teal-700 underline hover:text-teal-900">
-                        ＋ 変更後担当（代わりに入る人）を入力
+                        ＋ 変更後担当を入力（1人のヘルプで完結）
                       </button>
                     )}
+                    {/* 応援が連鎖する場合だけ使う。連鎖しない複数人の変更は下の「対象者を追加」で入力する */}
                     {d.chainPosition == null && chain.length === 0 && details.length < MAX_TARGETS && (
-                      <button type="button" onClick={() => startChain(i)}
-                        className="mb-2.5 block text-xs text-indigo-700 underline hover:text-indigo-900">
-                        ＋ 他施設からの応援者をつなぐ（応援チェーン）
-                      </button>
+                      <div className="mb-2.5">
+                        <button type="button" onClick={() => startChain(i)}
+                          className="block text-left text-xs text-indigo-700 underline hover:text-indigo-900">
+                          ＋ 3人以上の変更はこちら（応援チェーン）
+                        </button>
+                        <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
+                          応援が連鎖する場合に使用します。例：Aさん欠勤 → Bさんが応援 → CさんがBさんの代わりに勤務
+                        </p>
+                      </div>
                     )}
                     {d.chainPosition != null && d.chainPosition >= 2 ? (
                       <div className="pt-2 border-t border-gray-200">
