@@ -125,6 +125,18 @@ export const shiftChangeService = {
       .order('target_date', { ascending: false })
       .order('created_at', { ascending: false })
 
+    // 施設: 記録の施設か、応援チェーンの勤務先がその施設の記録。勤務先は明細側にあるので、
+    // 先に該当する記録IDを明細から引き、「記録の施設 または そのID」でサーバー側で絞る（全件取得の上限で漏れないように）
+    if (filters?.facilityId) {
+      const fid = filters.facilityId
+      const { data: chainRows, error: chainError } = await supabase
+        .from('shift_change_details').select('record_id').eq('work_facility_id', fid)
+      if (chainError) throw chainError
+      const chainIds = Array.from(new Set((chainRows ?? []).map(r => r.record_id)))
+      query = chainIds.length > 0
+        ? query.or(`facility_id.eq.${fid},id.in.(${chainIds.join(',')})`)
+        : query.eq('facility_id', fid)
+    }
     if (filters?.targetDate)  query = query.eq('target_date', filters.targetDate)
     if (filters?.reason)      query = query.ilike('reason', `%${filters.reason}%`)
     if (filters?.handledBy)   query = query.ilike('handled_by', `%${filters.handledBy}%`)

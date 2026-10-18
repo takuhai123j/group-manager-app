@@ -68,6 +68,8 @@ type DetailDraft = {
   showReplacement: boolean
   // 応援チェーンの順番（1〜5。チェーン外は null）。勤務先は保存時に順番から決める（shiftChangeChain）
   chainPosition: number | null
+  // チェーンの操作で、この明細の「代わりに入る人（変更後担当）」が変わったか（変更内容に古い名前が残っていないかの警告に使う）
+  chainReplacementChanged: boolean
 }
 
 type CompensatoryLeaveTiming = 'now' | 'later'
@@ -127,6 +129,7 @@ const EMPTY_DETAIL: DetailDraft = {
   suggestReplacementTarget: true,
   showReplacement: false,
   chainPosition: null,
+  chainReplacementChanged: false,
 }
 
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
@@ -236,18 +239,22 @@ function normalizeChain(details: DetailDraft[]): DetailDraft[] {
   const steps = chainSteps(details)
   if (steps.length === 0) return details
   const out = [...details]
+  const changed = (step: DetailDraft, rep: string | null) =>
+    step.chainReplacementChanged || typedNameKey(step.replacementName) !== typedNameKey(rep)
   if (steps.length === 1) {
     const { index, step } = steps[0]
-    out[index] = withAutoDetail({ ...step, chainPosition: null, replacementName: null, replacementOriginalShift: null })
+    out[index] = withAutoDetail({ ...step, chainPosition: null, replacementName: null, replacementOriginalShift: null, chainReplacementChanged: changed(step, null) })
     return out
   }
   steps.forEach(({ index, step }, k) => {
     const next = steps[k + 1]?.step
+    const rep = next ? (next.employeeName.trim() || null) : null
     out[index] = withAutoDetail({
       ...step,
       chainPosition: k + 1,
       isExternalSupport: k === 0 ? step.isExternalSupport : true,
-      replacementName: next ? (next.employeeName.trim() || null) : null,
+      chainReplacementChanged: changed(step, rep),
+      replacementName: rep,
       replacementOriginalShift: next ? (next.originalShift?.trim() || null) : null,
       replacementCalendarTarget: null, replacementStartTime: '', replacementEndTime: '',
       showReplacement: false,
@@ -295,8 +302,8 @@ function ShiftBeforeAfterFields({ draft, onChange }: { draft: ChangeDetailDraft;
 
 // 変更内容。自動のあいだは入力に合わせて文章が変わり、書き換えたら以後は自動で変えない。
 // 手入力（保存済みの記録を含む）のときは、押した場合だけ入力内容から作り直す
-function ChangeDetailTextField({ draft, required, onChange }: {
-  draft: ChangeDetailDraft; required?: boolean; onChange: (patch: DetailPatch) => void
+function ChangeDetailTextField({ draft, required, warning, onChange }: {
+  draft: ChangeDetailDraft; required?: boolean; warning?: string | null; onChange: (patch: DetailPatch) => void
 }) {
   const generated = generatedDetail(draft)
   const saved = draft.savedDetail ?? null
@@ -320,6 +327,9 @@ function ChangeDetailTextField({ draft, required, onChange }: {
         onChange={e => onChange({ changeDetail: e.target.value, detailAuto: false })}
         rows={2} placeholder="例：9:00-13:00 → 14:00-19:00"
         className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+      {warning && (
+        <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">{warning}</p>
+      )}
       {!draft.detailAuto && generated && generated !== draft.changeDetail && (
         <button type="button" onClick={rebuild}
           className="mt-1 block text-left text-xs text-blue-700 underline hover:text-blue-900">
@@ -411,6 +421,8 @@ export function ShiftChangeFormModal({
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [locallyLinkedIds, setLocallyLinkedIds] = useState<Set<string>>(new Set())
+  // この画面で応援チェーンから削除した人の名前（変更内容に残っていないかの警告に使う）
+  const [removedChainNames, setRemovedChainNames] = useState<string[]>([])
 
   const activeFacilities = facilities.filter(f => f.active)
 
@@ -421,6 +433,7 @@ export function ShiftChangeFormModal({
     setShowConfirm(false); setPendingInputs([])
     setRelatedRecords([]); setLinkingDetailId(null); setLinkError(null)
     setLocallyLinkedIds(new Set())
+    setRemovedChainNames([])
     singleIdRef.current = crypto.randomUUID()
     multiIdsRef.current = new Map()
 
@@ -460,6 +473,7 @@ export function ShiftChangeFormModal({
               suggestReplacementTarget: false,
               showReplacement: false,
               chainPosition: d.chainPosition,
+              chainReplacementChanged: false,
             }))
           : [{ ...EMPTY_DETAIL }]
       )
@@ -573,13 +587,34 @@ export function ShiftChangeFormModal({
     if (d.chainPosition == null) { setDetails(prev => prev.filter((_, idx) => idx !== i)); return }
     if (d.chainPosition === 1) {
       if (!confirm(`応援チェーンの1人目（${d.employeeName.trim() || '名前未入力'}）を削除すると、応援チェーンは解除されます（2人目以降は通常の明細として残ります）。削除しますか？`)) return
+      setRemovedChainNames(prev => [...prev, d.employeeName.trim()].filter(Boolean))
       setDetails(prev => prev.filter((_, idx) => idx !== i).map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x))
       return
     }
     const removed = chain.filter(s => (s.step.chainPosition ?? 0) >= d.chainPosition!)
     if (!confirm(`次の明細を削除しますか？${removed.length > 1 ? '（後ろの応援者もつながりが切れるため一緒に削除します）' : ''}\n\n${removed.map(s => `応援チェーン${s.step.chainPosition}人目：${s.step.employeeName.trim() || '名前未入力'}`).join('\n')}`)) return
     const drop = new Set(removed.map(s => s.index))
+    setRemovedChainNames(prev => [...prev, ...removed.map(s => s.step.employeeName.trim())].filter(Boolean))
     setDetails(prev => normalizeChain(prev.filter((_, idx) => !drop.has(idx))))
+  }
+  // 変更内容（手入力・保存済み）に、今は代わりに入っていない人の名前が残っていないか。
+  // ① チェーンの操作で変更後担当が変わった明細で「変更後担当：○○」が今の変更後担当と違う
+  // ② この画面でチェーンから削除した人の名前が書かれている（自分の明細の名前は除く）
+  const staleNameWarning = (d: DetailDraft): string | null => {
+    if (d.detailAuto) return null
+    const found = new Set<string>()
+    if (d.chainReplacementChanged) {
+      for (const m of Array.from(d.changeDetail.matchAll(/変更後担当：([^（／\s]+)/g))) {
+        if (typedNameKey(m[1]) !== typedNameKey(d.replacementName)) found.add(m[1])
+      }
+    }
+    const text = typedNameKey(d.changeDetail)
+    for (const n of removedChainNames) {
+      if (typedNameKey(n) && typedNameKey(n) !== typedNameKey(d.employeeName) && text.includes(typedNameKey(n))) found.add(n)
+    }
+    if (found.size === 0) return null
+    const now = d.replacementName?.trim()
+    return `変更内容に、今は代わりに入っていない人の名前（${Array.from(found).join('、')}）が残っています。${now ? `今の代わりに入る人は「${now}」です。` : ''}必要なら書き換えるか「入力内容から作り直す」を押してください`
   }
   // チェーンだけを解除する（明細はすべて残す。2人目以降の勤務先は記録の施設の扱いに戻る）
   const unlinkChain = () => {
@@ -757,6 +792,8 @@ export function ShiftChangeFormModal({
     }
     const chainError = validateChain(details, form.facilityId)
     if (chainError) { setError(chainError); return }
+    const stale = details.map((d, i) => ({ i, w: staleNameWarning(d) })).filter(x => x.w)
+    if (stale.length > 0 && !confirm(`次の明細の変更内容に、今は代わりに入っていない人の名前が残っています。このまま保存しますか？\n\n${stale.map(x => `${x.i + 1}人目（${details[x.i].employeeName.trim()}）：${details[x.i].changeDetail}`).join('\n')}`)) return
     if (hasDuplicateTarget(details.flatMap(d => [d.calendarTarget, d.replacementCalendarTarget]))) {
       setError('同じ人のカレンダーが2回指定されています（元の対象者・変更後担当・応援チェーンを合わせて1人1回にしてください）'); return
     }
@@ -1284,7 +1321,7 @@ export function ShiftChangeFormModal({
                     </div>
                     <div className="mb-2.5 space-y-2">
                       <ShiftBeforeAfterFields draft={d} onChange={patch => updateDetail(i, patch)} />
-                      <ChangeDetailTextField draft={d} required onChange={patch => updateDetail(i, patch)} />
+                      <ChangeDetailTextField draft={d} required warning={staleNameWarning(d)} onChange={patch => updateDetail(i, patch)} />
                     </div>
                     <div className="mb-2.5 space-y-2">
                       <CalendarTargetField
