@@ -13,6 +13,7 @@ import {
 } from '@/lib/shiftChangeCalendar'
 import { shiftChangeErrorMessage } from '@/services/shiftChangeService'
 import { CalendarTargetField, CalendarTimeFields } from './CalendarTargetField'
+import { buildChangeDetailText, usesAfterShift } from '@/lib/shiftChangeDetailText'
 
 interface Props {
   isOpen: boolean
@@ -40,8 +41,12 @@ type DetailDraft = {
   changeDetail: string
   isExternalSupport: boolean
   supportFromFacilityId: string
-  // 単日編集フォームでは変更UIを出さないが、複数日入力で設定された値を編集保存時に消さないよう保持する非表示フィールド
+  // 変更前シフト（original_shift として保存）と変更後シフト（文章を作るための画面上の入力。保存しない）
   originalShift: string | null
+  afterShift: string
+  // 変更内容を自動で作るか。手で書き換えたら false にして以後は上書きしない（保存済みの記録を開いたときも false）
+  detailAuto: boolean
+  // 変更後担当と振休の状態。振休の状態は単日の画面に出さないが、複数日入力で設定された値を編集保存で消さないよう保持する
   replacementName: string | null
   replacementOriginalShift: string | null
   compensatoryLeaveStatus: CompensatoryLeaveStatus | null
@@ -65,6 +70,10 @@ type CompensatoryLeaveTiming = 'now' | 'later'
 type DayPersonDraft = {
   changeType: ShiftChangeType
   originalShift: string
+  afterShift: string
+  // 変更内容（自動で作った文章。手で書き換えたら detailAuto を false にして以後は上書きしない）
+  changeDetail: string
+  detailAuto: boolean
   replacementName: string
   replacementOriginalShift: string
   isExternalSupport: boolean
@@ -93,10 +102,12 @@ type DayDraft = {
 const EMPTY_DETAIL: DetailDraft = {
   employeeName: '',
   changeType: '欠勤',
-  changeDetail: '',
+  changeDetail: buildChangeDetailText({ changeType: '欠勤' }),
   isExternalSupport: false,
   supportFromFacilityId: '',
   originalShift: null,
+  afterShift: '',
+  detailAuto: true,
   replacementName: null,
   replacementOriginalShift: null,
   compensatoryLeaveStatus: null,
@@ -114,6 +125,9 @@ const EMPTY_DETAIL: DetailDraft = {
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
   changeType: '欠勤',
   originalShift: '',
+  afterShift: '',
+  changeDetail: buildChangeDetailText({ changeType: '欠勤' }),
+  detailAuto: true,
   replacementName: '',
   replacementOriginalShift: '',
   isExternalSupport: false,
@@ -184,15 +198,27 @@ function replacementOpen(d: DetailDraft): boolean {
   return d.showReplacement || d.changeType === '交代出勤' || !!d.replacementName?.trim() || !!d.replacementCalendarTarget
 }
 
-function buildChangeDetail(d: DayPersonDraft): string {
-  const parts: string[] = []
-  if (d.originalShift) parts.push(`元シフト：${d.originalShift}`)
-  if (d.replacementName) {
-    let rep = `→ ${d.replacementName}`
-    if (d.replacementOriginalShift) rep += `（元：${d.replacementOriginalShift}）`
-    parts.push(rep)
-  }
-  return parts.join(' ') || '（未入力）'
+type ChangeDetailDraft = {
+  changeType: string
+  originalShift: string | null
+  afterShift: string
+  replacementName: string | null
+  replacementOriginalShift: string | null
+  changeDetail: string
+  detailAuto: boolean
+}
+
+// 入力から作る変更内容の文章
+function generatedDetail(d: ChangeDetailDraft): string {
+  return buildChangeDetailText({
+    changeType: d.changeType, beforeShift: d.originalShift, afterShift: d.afterShift,
+    replacementName: d.replacementName, replacementOriginalShift: d.replacementOriginalShift,
+  })
+}
+
+// 自動のままの明細だけ、入力に合わせて文章を作り直す（手で書き換えた文章・保存済みの文章はそのまま）
+function withAutoDetail<T extends ChangeDetailDraft>(d: T): T {
+  return d.detailAuto ? { ...d, changeDetail: generatedDetail(d) } : d
 }
 
 // 振休日の追加記録（振休を取る人・その日の代替出勤者）は反映先を選ぶ欄がないため、カレンダーには反映しない
@@ -202,6 +228,61 @@ function CompensatoryCalendarNote() {
       振休日の記録（振休・振休日の代替出勤者）は、カレンダーに自動反映されません。
       反映したい場合は、登録後にシフト変更の一覧からその記録を開き、「カレンダーに反映」で本人を選んで保存してください。
     </p>
+  )
+}
+
+type DetailPatch = { originalShift?: string; afterShift?: string; changeDetail?: string; detailAuto?: boolean }
+
+// 変更前シフト・変更後シフト（欠勤・振休では変更後シフトを出さない）
+function ShiftBeforeAfterFields({ draft, onChange }: { draft: ChangeDetailDraft; onChange: (patch: DetailPatch) => void }) {
+  const showAfter = usesAfterShift(draft.changeType) || draft.afterShift.trim() !== ''
+  return (
+    <div className={cn('grid gap-2', showAfter ? 'grid-cols-2' : 'grid-cols-1')}>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">変更前シフト</label>
+        <input type="text" value={draft.originalShift ?? ''}
+          onChange={e => onChange({ originalShift: e.target.value })}
+          placeholder="例：09:00～18:00"
+          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      {showAfter && (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">変更後シフト</label>
+          <input type="text" value={draft.afterShift}
+            onChange={e => onChange({ afterShift: e.target.value })}
+            placeholder="例：13:00～18:00"
+            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 変更内容。自動のあいだは入力に合わせて文章が変わり、書き換えたら以後は自動で変えない。
+// 手入力（保存済みの記録を含む）のときは、押した場合だけ入力内容から作り直す
+function ChangeDetailTextField({ draft, required, onChange }: {
+  draft: ChangeDetailDraft; required?: boolean; onChange: (patch: DetailPatch) => void
+}) {
+  const generated = generatedDetail(draft)
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <label className="text-xs font-medium text-gray-700">
+          変更内容 {required ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">（任意）</span>}
+        </label>
+        <span className="text-[11px] text-gray-400">{draft.detailAuto ? '種別・シフトから自動作成（書き換えできます）' : '手入力'}</span>
+      </div>
+      <textarea value={draft.changeDetail}
+        onChange={e => onChange({ changeDetail: e.target.value, detailAuto: false })}
+        rows={2} placeholder="例：9:00-13:00 → 14:00-19:00"
+        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+      {!draft.detailAuto && generated && generated !== draft.changeDetail && (
+        <button type="button" onClick={() => onChange({ changeDetail: generated, detailAuto: true })}
+          className="mt-1 text-left text-xs text-blue-700 underline hover:text-blue-900">
+          入力内容から作り直す（「{generated}」にする）
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -239,6 +320,7 @@ export function ShiftChangeFormModal({
   const [bulk, setBulk] = useState({
     changeType: '欠勤' as ShiftChangeType,
     originalShift: '',
+    afterShift: '',
     replacementName: '',
     replacementOriginalShift: '',
     isExternalSupport: false,
@@ -312,6 +394,8 @@ export function ShiftChangeFormModal({
               supportFromFacilityId: d.supportFromFacilityId ?? '',
               // 複数日入力で設定された値は編集UIで表示・変更しないが、保存時に消えないよう保持する
               originalShift: d.originalShift,
+              afterShift: '',
+              detailAuto: false,
               replacementName: d.replacementName,
               replacementOriginalShift: d.replacementOriginalShift,
               compensatoryLeaveStatus: d.compensatoryLeaveStatus,
@@ -340,7 +424,7 @@ export function ShiftChangeFormModal({
       setPeriodForm({ facilityId: '', handledBy: '', reason: '', memo: '' })
       setPeriodEmployeeNames([''])
       setDayDrafts([])
-      setBulk({ changeType: '欠勤', originalShift: '', replacementName: '', replacementOriginalShift: '', isExternalSupport: false, supportFromFacilityId: '', startTime: '', endTime: '' })
+      setBulk({ changeType: '欠勤', originalShift: '', afterShift: '', replacementName: '', replacementOriginalShift: '', isExternalSupport: false, supportFromFacilityId: '', startTime: '', endTime: '' })
     }
   }, [isOpen, editing])
 
@@ -395,12 +479,12 @@ export function ShiftChangeFormModal({
     setPeriodForm(prev => ({ ...prev, [key]: val }))
 
   const updateDetail = (i: number, patch: Partial<DetailDraft>) =>
-    setDetails(prev => prev.map((d, idx) => idx === i ? { ...d, ...patch } : d))
+    setDetails(prev => prev.map((d, idx) => idx === i ? withAutoDetail({ ...d, ...patch }) : d))
 
   const updateDayPerson = (dayIdx: number, personIdx: number, patch: Partial<DayPersonDraft>) =>
     setDayDrafts(prev => prev.map((d, di) => di !== dayIdx ? d : {
       ...d,
-      persons: d.persons.map((p, pi) => pi === personIdx ? { ...p, ...patch } : p),
+      persons: d.persons.map((p, pi) => pi === personIdx ? withAutoDetail({ ...p, ...patch }) : p),
     }))
 
   const addPersonName = () => {
@@ -447,21 +531,21 @@ export function ShiftChangeFormModal({
   const CLEAR_REPLACEMENT_TARGET = { replacementCalendarTarget: null, replacementStartTime: '', replacementEndTime: '' } as const
   // 単日: 変更後担当の名前を別人に変えたら、前の名前で選んだ反映先・時刻を外して提案し直す
   const updateDetailReplacementName = (i: number, val: string) =>
-    setDetails(prev => prev.map((d, idx) => idx !== i ? d : {
+    setDetails(prev => prev.map((d, idx) => idx !== i ? d : withAutoDetail({
       ...d,
       replacementName: val,
       suggestReplacementTarget: true,
       ...(typedNameKey(val) !== typedNameKey(d.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
-    }))
+    })))
   // 期間・複数日: 日ごとの変更後担当の名前（別人に変えたらその日の反映先・時刻を外す）
   const updateDayReplacementName = (dayIdx: number, personIdx: number, val: string) =>
     setDayDrafts(prev => prev.map((d, di) => di !== dayIdx ? d : {
       ...d,
-      persons: d.persons.map((p, pi) => pi !== personIdx ? p : {
+      persons: d.persons.map((p, pi) => pi !== personIdx ? p : withAutoDetail({
         ...p,
         replacementName: val,
         ...(typedNameKey(val) !== typedNameKey(p.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
-      }),
+      })),
     }))
   const updateDayReplacementTarget = (dayIdx: number, personIdx: number, target: MeetingAssigneeRef | null) =>
     updateDayPerson(dayIdx, personIdx, target ? { replacementCalendarTarget: target } : CLEAR_REPLACEMENT_TARGET)
@@ -486,10 +570,13 @@ export function ShiftChangeFormModal({
   const applyBulk = () => {
     setDayDrafts(prev => prev.map(d => ({
       ...d,
-      persons: d.persons.map(existing => ({
+      // 「全日に適用」は全日の入力をまとめて置き換える操作なので、変更内容も入力から作り直す（その後の手修正は可能）
+      persons: d.persons.map(existing => withAutoDetail({
         ...existing,
         changeType: bulk.changeType,
         originalShift: bulk.originalShift,
+        afterShift: bulk.afterShift,
+        detailAuto: true,
         replacementName: bulk.replacementName,
         replacementOriginalShift: bulk.replacementOriginalShift,
         isExternalSupport: bulk.isExternalSupport,
@@ -563,8 +650,8 @@ export function ShiftChangeFormModal({
           changeDetail: d.changeDetail,
           isExternalSupport: d.isExternalSupport,
           supportFromFacilityId: d.isExternalSupport ? d.supportFromFacilityId || null : null,
-          // 変更元シフト・振休の状態は単日の編集UIにないため、既存値をそのまま引き継ぐ
-          originalShift: d.originalShift,
+          // 変更前シフトは画面で編集できる（空なら null）。振休の状態は単日の編集UIにないため、既存値をそのまま引き継ぐ
+          originalShift: d.originalShift?.trim() ? d.originalShift : null,
           replacementName: d.replacementName?.trim() ? d.replacementName.trim() : null,
           replacementOriginalShift: d.replacementOriginalShift?.trim() ? d.replacementOriginalShift.trim() : null,
           compensatoryLeaveStatus: d.compensatoryLeaveStatus,
@@ -659,7 +746,7 @@ export function ShiftChangeFormModal({
         return {
           employeeName: trimmedNames[idx],
           changeType: p.changeType,
-          changeDetail: buildChangeDetail(p),
+          changeDetail: p.changeDetail.trim() || '（未入力）',
           isExternalSupport: p.isExternalSupport,
           supportFromFacilityId: p.isExternalSupport ? p.supportFromFacilityId || null : null,
           originalShift: p.originalShift || null,
@@ -1010,17 +1097,6 @@ export function ShiftChangeFormModal({
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">理由 <span className="text-red-500">*</span></label>
-                <input type="text" value={form.reason} onChange={e => setField('reason', e.target.value)}
-                  placeholder="例：体調不良、電車遅延"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">メモ <span className="text-gray-400 font-normal">（任意）</span></label>
-                <textarea value={form.memo} onChange={e => setField('memo', e.target.value)} rows={2}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-              </div>
               <div className="border-t pt-3">
                 <p className="text-xs font-semibold text-gray-600 mb-3">対象者明細（最大{MAX_TARGETS}名）</p>
                 {details.map((d, i) => (
@@ -1055,12 +1131,9 @@ export function ShiftChangeFormModal({
                         ))}
                       </div>
                     </div>
-                    <div className="mb-2.5">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">変更内容 <span className="text-red-500">*</span></label>
-                      <textarea value={d.changeDetail}
-                        onChange={e => updateDetail(i, { changeDetail: e.target.value })}
-                        rows={2} placeholder="例：9:00-13:00 → 14:00-19:00"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                    <div className="mb-2.5 space-y-2">
+                      <ShiftBeforeAfterFields draft={d} onChange={patch => updateDetail(i, patch)} />
+                      <ChangeDetailTextField draft={d} required onChange={patch => updateDetail(i, patch)} />
                     </div>
                     <div className="mb-2.5 space-y-2">
                       <CalendarTargetField
@@ -1157,6 +1230,19 @@ export function ShiftChangeFormModal({
                     <Plus size={14} />対象者を追加（{details.length}/{MAX_TARGETS}名）
                   </button>
                 )}
+              </div>
+              <div className="border-t pt-3 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">理由 <span className="text-red-500">*</span></label>
+                  <input type="text" value={form.reason} onChange={e => setField('reason', e.target.value)}
+                    placeholder="例：体調不良、電車遅延"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">メモ <span className="text-gray-400 font-normal">（任意）</span></label>
+                  <textarea value={form.memo} onChange={e => setField('memo', e.target.value)} rows={2}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                </div>
               </div>
 
               {/* ── 関連する振休 ── */}
@@ -1388,14 +1474,12 @@ export function ShiftChangeFormModal({
                           )}>{t}</button>
                       ))}
                     </div>
+                    <div className="mb-2">
+                      <ShiftBeforeAfterFields
+                        draft={{ ...bulk, changeDetail: '', detailAuto: true }}
+                        onChange={patch => setBulk(p => ({ ...p, ...patch }))} />
+                    </div>
                     <div className="grid grid-cols-2 gap-2 mb-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">変更元シフト</label>
-                        <input type="text" value={bulk.originalShift}
-                          onChange={e => setBulk(p => ({ ...p, originalShift: e.target.value }))}
-                          placeholder="例：09:00～18:00"
-                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当</label>
                         <input type="text" value={bulk.replacementName}
@@ -1403,14 +1487,17 @@ export function ShiftChangeFormModal({
                           placeholder="例：田中パート"
                           className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当の元シフト</label>
+                        <input type="text" value={bulk.replacementOriginalShift}
+                          onChange={e => setBulk(p => ({ ...p, replacementOriginalShift: e.target.value }))}
+                          placeholder="例：休み、未定"
+                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
                     </div>
-                    <div className="mb-2.5">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当の元シフト</label>
-                      <input type="text" value={bulk.replacementOriginalShift}
-                        onChange={e => setBulk(p => ({ ...p, replacementOriginalShift: e.target.value }))}
-                        placeholder="例：休み、09:00～13:00、未定"
-                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
+                    <p className="mb-2.5 text-xs text-gray-500">
+                      変更内容は「{generatedDetail({ ...bulk, changeDetail: '', detailAuto: true }) || '（シフトを入れると作成）'}」で全日に入り、適用後に日ごとに書き換えられます
+                    </p>
                     <div className="mb-2.5 pt-2 border-t border-blue-200">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input type="checkbox" checked={bulk.isExternalSupport}
@@ -1490,15 +1577,13 @@ export function ShiftChangeFormModal({
                             ))}
                           </div>
 
-                          {/* 変更元シフト・変更後担当 */}
+                          {/* 変更前・変更後シフト */}
+                          <div className="mb-2">
+                            <ShiftBeforeAfterFields draft={p} onChange={patch => updateDayPerson(dayIdx, personIdx, patch)} />
+                          </div>
+
+                          {/* 変更後担当・その元シフト */}
                           <div className="grid grid-cols-2 gap-2 mb-2">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">変更元シフト</label>
-                              <input type="text" value={p.originalShift}
-                                onChange={e => updateDayPerson(dayIdx, personIdx, { originalShift: e.target.value })}
-                                placeholder="例：09:00～18:00"
-                                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                            </div>
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当</label>
                               <input type="text" value={p.replacementName}
@@ -1506,15 +1591,18 @@ export function ShiftChangeFormModal({
                                 placeholder="例：田中パート"
                                 className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当の元シフト</label>
+                              <input type="text" value={p.replacementOriginalShift}
+                                onChange={e => updateDayPerson(dayIdx, personIdx, { replacementOriginalShift: e.target.value })}
+                                placeholder="例：休み、未定"
+                                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
                           </div>
 
-                          {/* 変更後担当の元シフト */}
+                          {/* 変更内容（自動作成・書き換え可） */}
                           <div className="mb-2">
-                            <label className="block text-xs font-medium text-gray-700 mb-1">変更後担当の元シフト</label>
-                            <input type="text" value={p.replacementOriginalShift}
-                              onChange={e => updateDayPerson(dayIdx, personIdx, { replacementOriginalShift: e.target.value })}
-                              placeholder="例：休み、09:00～13:00、未定"
-                              className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            <ChangeDetailTextField draft={p} onChange={patch => updateDayPerson(dayIdx, personIdx, patch)} />
                           </div>
 
                           {/* 変更後担当のカレンダー反映（日付ごと。元の対象者とは別に設定する） */}
