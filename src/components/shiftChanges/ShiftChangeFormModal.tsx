@@ -46,6 +46,8 @@ type DetailDraft = {
   afterShift: string
   // 変更内容を自動で作るか。手で書き換えたら false にして以後は上書きしない（保存済みの記録を開いたときも false）
   detailAuto: boolean
+  // 保存済みの変更内容（編集で開いた明細だけ。新しく足した明細は null）。表示を優先し、置き換えるときは確認する
+  savedDetail: string | null
   // 変更後担当と振休の状態。振休の状態は単日の画面に出さないが、複数日入力で設定された値を編集保存で消さないよう保持する
   replacementName: string | null
   replacementOriginalShift: string | null
@@ -108,6 +110,7 @@ const EMPTY_DETAIL: DetailDraft = {
   originalShift: null,
   afterShift: '',
   detailAuto: true,
+  savedDetail: null,
   replacementName: null,
   replacementOriginalShift: null,
   compensatoryLeaveStatus: null,
@@ -206,6 +209,7 @@ type ChangeDetailDraft = {
   replacementOriginalShift: string | null
   changeDetail: string
   detailAuto: boolean
+  savedDetail?: string | null
 }
 
 // 入力から作る変更内容の文章
@@ -264,22 +268,37 @@ function ChangeDetailTextField({ draft, required, onChange }: {
   draft: ChangeDetailDraft; required?: boolean; onChange: (patch: DetailPatch) => void
 }) {
   const generated = generatedDetail(draft)
+  const saved = draft.savedDetail ?? null
+  const showingSaved = saved !== null && draft.changeDetail === saved
+  // 保存済みの文章を置き換えるときだけ確認する（キャンセルなら何も変えない。保存するまで記録は変わらない）
+  const rebuild = () => {
+    if (showingSaved && !confirm(`保存済みの変更内容を置き換えますか？（保存するまで記録は変わりません）\n\n今：${saved}\n新：${generated}`)) return
+    onChange({ changeDetail: generated, detailAuto: true })
+  }
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2 mb-1">
         <label className="text-xs font-medium text-gray-700">
           変更内容 {required ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">（任意）</span>}
         </label>
-        <span className="text-[11px] text-gray-400">{draft.detailAuto ? '種別・シフトから自動作成（書き換えできます）' : '手入力'}</span>
+        <span className="text-[11px] text-gray-400">
+          {showingSaved ? '保存済みの文章（種別・シフトを変えても自動では変わりません）' : draft.detailAuto ? '種別・シフトから自動作成（書き換えできます）' : '手入力'}
+        </span>
       </div>
       <textarea value={draft.changeDetail}
         onChange={e => onChange({ changeDetail: e.target.value, detailAuto: false })}
         rows={2} placeholder="例：9:00-13:00 → 14:00-19:00"
         className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
       {!draft.detailAuto && generated && generated !== draft.changeDetail && (
-        <button type="button" onClick={() => onChange({ changeDetail: generated, detailAuto: true })}
-          className="mt-1 text-left text-xs text-blue-700 underline hover:text-blue-900">
+        <button type="button" onClick={rebuild}
+          className="mt-1 block text-left text-xs text-blue-700 underline hover:text-blue-900">
           入力内容から作り直す（「{generated}」にする）
+        </button>
+      )}
+      {saved !== null && !showingSaved && (
+        <button type="button" onClick={() => onChange({ changeDetail: saved, detailAuto: false })}
+          className="mt-1 block text-left text-xs text-gray-600 underline hover:text-gray-900">
+          保存済みの文章に戻す（「{saved}」）
         </button>
       )}
     </div>
@@ -396,6 +415,7 @@ export function ShiftChangeFormModal({
               originalShift: d.originalShift,
               afterShift: '',
               detailAuto: false,
+              savedDetail: d.changeDetail,
               replacementName: d.replacementName,
               replacementOriginalShift: d.replacementOriginalShift,
               compensatoryLeaveStatus: d.compensatoryLeaveStatus,
@@ -568,7 +588,9 @@ export function ShiftChangeFormModal({
   }
 
   const applyBulk = () => {
-    setDayDrafts(prev => prev.map(d => ({
+    // カレンダーの時刻は一括で入れたときだけ全日に入れる（空なら日ごとの時刻をそのまま残す）。反映先（元の対象者）は変えない
+    const bulkTimed = !!bulk.startTime && !!bulk.endTime
+    const next = dayDrafts.map(d => ({
       ...d,
       // 「全日に適用」は全日の入力をまとめて置き換える操作なので、変更内容も入力から作り直す（その後の手修正は可能）
       persons: d.persons.map(existing => withAutoDetail({
@@ -581,12 +603,26 @@ export function ShiftChangeFormModal({
         replacementOriginalShift: bulk.replacementOriginalShift,
         isExternalSupport: bulk.isExternalSupport,
         supportFromFacilityId: bulk.isExternalSupport ? bulk.supportFromFacilityId : '',
-        startTime: bulk.startTime,
-        endTime: bulk.endTime,
-        // 一括で変更後担当を別の人にした日は、前の変更後担当の反映先を外す
+        startTime: bulkTimed ? bulk.startTime : existing.startTime,
+        endTime: bulkTimed ? bulk.endTime : existing.endTime,
+        // 一括で変更後担当を別の人にした日は、前の変更後担当の反映先を外す（別人のカレンダーに入らないように）
         ...(typedNameKey(bulk.replacementName) !== typedNameKey(existing.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
       })),
-    })))
+    }))
+    // 手で書き換えた変更内容を上書きする日・変更後担当の反映先が外れる日があれば、日付を示して確認する（キャンセルなら何も変えない）
+    const changes: string[] = []
+    dayDrafts.forEach((d, di) => d.persons.forEach((p, pi) => {
+      const n = next[di].persons[pi]
+      const who = periodEmployeeNames[pi]?.trim() || `対象者${pi + 1}`
+      if (!p.detailAuto && p.changeDetail !== n.changeDetail) {
+        changes.push(`${formatDateJP(d.date)} ${who}：手入力の変更内容「${p.changeDetail}」を「${n.changeDetail || '（空）'}」にする`)
+      }
+      if (p.replacementCalendarTarget && !n.replacementCalendarTarget) {
+        changes.push(`${formatDateJP(d.date)} ${who}：変更後担当のカレンダー反映（${targetName(p.replacementCalendarTarget)}）を外す`)
+      }
+    }))
+    if (changes.length > 0 && !confirm(`全日に適用すると、次の内容が変わります。適用しますか？\n\n${changes.join('\n')}`)) return
+    setDayDrafts(next)
   }
 
   // カレンダー反映先の候補（有効な人＋編集中の明細で指定済みの人。変更後担当の反映先も含む）と表示名
@@ -1521,6 +1557,7 @@ export function ShiftChangeFormModal({
                           endTime={bulk.endTime}
                           onChange={(startTime, endTime) => setBulk(p => ({ ...p, startTime, endTime }))}
                         />
+                        <p className="mt-1 text-xs text-gray-500">時刻を空のまま適用すると、日ごとに入れた時刻はそのまま残ります</p>
                       </div>
                     )}
                     <button type="button" onClick={applyBulk}
