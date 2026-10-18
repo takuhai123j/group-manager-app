@@ -14,6 +14,7 @@ import {
 import { shiftChangeErrorMessage } from '@/services/shiftChangeService'
 import { CalendarTargetField, CalendarTimeFields } from './CalendarTargetField'
 import { buildChangeDetailText, usesAfterShift } from '@/lib/shiftChangeDetailText'
+import { chainSteps, chainWorkFacilities, validateChain, chainSummary, MAX_CHAIN } from '@/lib/shiftChangeChain'
 
 interface Props {
   isOpen: boolean
@@ -65,6 +66,8 @@ type DetailDraft = {
   suggestReplacementTarget: boolean
   // 「＋変更後担当を入力」で欄を開いたか（交代出勤・入力済みのときは常に開く）
   showReplacement: boolean
+  // 応援チェーンの順番（1〜5。チェーン外は null）。勤務先は保存時に順番から決める（shiftChangeChain）
+  chainPosition: number | null
 }
 
 type CompensatoryLeaveTiming = 'now' | 'later'
@@ -123,6 +126,7 @@ const EMPTY_DETAIL: DetailDraft = {
   replacementEndTime: '',
   suggestReplacementTarget: true,
   showReplacement: false,
+  chainPosition: null,
 }
 
 const EMPTY_PERSON_DRAFT_FIELDS: DayPersonDraft = {
@@ -223,6 +227,33 @@ function generatedDetail(d: ChangeDetailDraft): string {
 // 自動のままの明細だけ、入力に合わせて文章を作り直す（手で書き換えた文章・保存済みの文章はそのまま）
 function withAutoDetail<T extends ChangeDetailDraft>(d: T): T {
   return d.detailAuto ? { ...d, changeDetail: generatedDetail(d) } : d
+}
+
+// 応援チェーンの明細をそろえる。順番を1から振り直し、各人は次の応援者を変更後担当（名前・元シフト）として持つ。
+// 変更後担当のカレンダー反映はチェーンでは使わない（次の応援者は自分の明細で反映する＝同じ人を2回入れない）。
+// 2人目以降は他施設からの応援。チェーンが1人だけになったら解除し、いなくなった次の応援者の変更後担当も外す
+function normalizeChain(details: DetailDraft[]): DetailDraft[] {
+  const steps = chainSteps(details)
+  if (steps.length === 0) return details
+  const out = [...details]
+  if (steps.length === 1) {
+    const { index, step } = steps[0]
+    out[index] = withAutoDetail({ ...step, chainPosition: null, replacementName: null, replacementOriginalShift: null })
+    return out
+  }
+  steps.forEach(({ index, step }, k) => {
+    const next = steps[k + 1]?.step
+    out[index] = withAutoDetail({
+      ...step,
+      chainPosition: k + 1,
+      isExternalSupport: k === 0 ? step.isExternalSupport : true,
+      replacementName: next ? (next.employeeName.trim() || null) : null,
+      replacementOriginalShift: next ? (next.originalShift?.trim() || null) : null,
+      replacementCalendarTarget: null, replacementStartTime: '', replacementEndTime: '',
+      showReplacement: false,
+    })
+  })
+  return out
 }
 
 // 振休日の追加記録（振休を取る人・その日の代替出勤者）は反映先を選ぶ欄がないため、カレンダーには反映しない
@@ -428,6 +459,7 @@ export function ShiftChangeFormModal({
               replacementEndTime: d.replacementEndTime ?? '',
               suggestReplacementTarget: false,
               showReplacement: false,
+              chainPosition: d.chainPosition,
             }))
           : [{ ...EMPTY_DETAIL }]
       )
@@ -499,7 +531,61 @@ export function ShiftChangeFormModal({
     setPeriodForm(prev => ({ ...prev, [key]: val }))
 
   const updateDetail = (i: number, patch: Partial<DetailDraft>) =>
-    setDetails(prev => prev.map((d, idx) => idx === i ? withAutoDetail({ ...d, ...patch }) : d))
+    setDetails(prev => normalizeChain(prev.map((d, idx) => idx === i ? withAutoDetail({ ...d, ...patch }) : d)))
+
+  // ── 応援チェーン（単日） ──
+  const facName = (id: string | null | undefined) => (id ? facilities.find(f => f.id === id)?.name : undefined) ?? ''
+  const chain = chainSteps(details)
+  const chainWork = chainWorkFacilities(details, form.facilityId)
+  // この明細を1人目にして、2人目（他施設からの応援者）の明細をすぐ後ろに足す。
+  // 1人目の変更後担当に入れていた名前・元シフト・カレンダー反映は2人目の明細へ移す（同じ人を2回入れないため）
+  const startChain = (i: number) => setDetails(prev => {
+    const head = prev[i]
+    const second: DetailDraft = withAutoDetail({
+      ...EMPTY_DETAIL,
+      employeeName: head.replacementName?.trim() ?? '',
+      changeType: '交代出勤',
+      originalShift: head.replacementOriginalShift?.trim() || null,
+      isExternalSupport: true,
+      calendarTarget: head.replacementCalendarTarget,
+      startTime: head.replacementCalendarTarget ? head.replacementStartTime : '',
+      endTime: head.replacementCalendarTarget ? head.replacementEndTime : '',
+      suggestTarget: !head.replacementCalendarTarget,
+      chainPosition: 2,
+    })
+    const next = [...prev]
+    next[i] = { ...head, chainPosition: 1 }
+    next.splice(i + 1, 0, second)
+    return normalizeChain(next)
+  })
+  // 最後の応援者の元施設へ応援する人を、必要なときだけ足す（交代出勤を選んでも自動では足さない）
+  const continueChain = () => setDetails(prev => {
+    const steps = chainSteps(prev)
+    const last = steps[steps.length - 1]
+    const added: DetailDraft = withAutoDetail({ ...EMPTY_DETAIL, changeType: '交代出勤', isExternalSupport: true, chainPosition: steps.length + 1 })
+    const next = [...prev]
+    next.splice(last.index + 1, 0, added)
+    return normalizeChain(next)
+  })
+  // 明細の削除。チェーンの2人目以降を消すと後ろの応援者のつながりも切れるので一緒に消す（確認する）。1人目を消すとチェーンを解除する
+  const removeDetail = (i: number) => {
+    const d = details[i]
+    if (d.chainPosition == null) { setDetails(prev => prev.filter((_, idx) => idx !== i)); return }
+    if (d.chainPosition === 1) {
+      if (!confirm(`応援チェーンの1人目（${d.employeeName.trim() || '名前未入力'}）を削除すると、応援チェーンは解除されます（2人目以降は通常の明細として残ります）。削除しますか？`)) return
+      setDetails(prev => prev.filter((_, idx) => idx !== i).map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x))
+      return
+    }
+    const removed = chain.filter(s => (s.step.chainPosition ?? 0) >= d.chainPosition!)
+    if (!confirm(`次の明細を削除しますか？${removed.length > 1 ? '（後ろの応援者もつながりが切れるため一緒に削除します）' : ''}\n\n${removed.map(s => `応援チェーン${s.step.chainPosition}人目：${s.step.employeeName.trim() || '名前未入力'}`).join('\n')}`)) return
+    const drop = new Set(removed.map(s => s.index))
+    setDetails(prev => normalizeChain(prev.filter((_, idx) => !drop.has(idx))))
+  }
+  // チェーンだけを解除する（明細はすべて残す。2人目以降の勤務先は記録の施設の扱いに戻る）
+  const unlinkChain = () => {
+    if (!confirm('応援チェーンを解除しますか？\n明細は残りますが、2人目以降の勤務先は記録の施設として扱われます（カレンダーの施設も記録の施設になります）。')) return
+    setDetails(prev => prev.map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x))
+  }
 
   const updateDayPerson = (dayIdx: number, personIdx: number, patch: Partial<DayPersonDraft>) =>
     setDayDrafts(prev => prev.map((d, di) => di !== dayIdx ? d : {
@@ -655,7 +741,8 @@ export function ShiftChangeFormModal({
     for (let i = 0; i < details.length; i++) {
       if (!details[i].employeeName.trim()) { setError(`対象者${i + 1}の名前を入力してください`); return }
       if (!details[i].changeDetail.trim()) { setError(`対象者${i + 1}の変更内容を入力してください`); return }
-      if (details[i].isExternalSupport && !details[i].supportFromFacilityId) {
+      // 応援チェーンの人の応援元は validateChain で確かめる（チェーン用の文言で出す）
+      if (details[i].isExternalSupport && details[i].chainPosition == null && !details[i].supportFromFacilityId) {
         setError(`対象者${i + 1}の調整元施設を選択してください`); return
       }
       if (details[i].calendarTarget) {
@@ -668,8 +755,10 @@ export function ShiftChangeFormModal({
         if (timeError) { setError(`対象者${i + 1}の変更後担当：${timeError}`); return }
       }
     }
+    const chainError = validateChain(details, form.facilityId)
+    if (chainError) { setError(chainError); return }
     if (hasDuplicateTarget(details.flatMap(d => [d.calendarTarget, d.replacementCalendarTarget]))) {
-      setError('同じ人のカレンダーが2回指定されています（元の対象者・変更後担当を合わせて1人1回にしてください）'); return
+      setError('同じ人のカレンダーが2回指定されています（元の対象者・変更後担当・応援チェーンを合わせて1人1回にしてください）'); return
     }
     setSaving(true); setError(null); setEmailWarning(null); setEmailSuccess(null)
     try {
@@ -680,12 +769,15 @@ export function ShiftChangeFormModal({
         reason: form.reason,
         handledBy: form.handledBy,
         memo: form.memo,
-        details: details.map(d => ({
+        details: details.map((d, i) => ({
           employeeName: d.employeeName,
           changeType: d.changeType,
           changeDetail: d.changeDetail,
           isExternalSupport: d.isExternalSupport,
           supportFromFacilityId: d.isExternalSupport ? d.supportFromFacilityId || null : null,
+          // 応援チェーン（チェーン外は null）。勤務先は順番から決める（1・2人目＝記録の施設、3人目以降＝1つ前の人の元施設）
+          chainPosition: d.chainPosition,
+          workFacilityId: d.chainPosition != null ? chainWork[i] : null,
           // 変更前シフトは画面で編集できる（空なら null）。振休の状態は単日の編集UIにないため、既存値をそのまま引き継ぐ
           originalShift: d.originalShift?.trim() ? d.originalShift : null,
           replacementName: d.replacementName?.trim() ? d.replacementName.trim() : null,
@@ -713,7 +805,10 @@ export function ShiftChangeFormModal({
               isExternalSupport: d.isExternalSupport,
               supportFromFacilityName: d.supportFromFacilityId
                 ? facilities.find(f => f.id === d.supportFromFacilityId)?.name : undefined,
+              // 応援チェーンで記録の施設と別の施設に入る人だけ勤務先を書く
+              workFacilityName: d.workFacilityId && d.workFacilityId !== saved.facilityId ? facName(d.workFacilityId) : undefined,
             })),
+            chainSummary: chainSteps(saved.details).length > 0 ? chainSummary(saved.details, facName) : undefined,
           }
           const res = await fetch('/api/shift-change-notify', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1138,9 +1233,16 @@ export function ShiftChangeFormModal({
                 {details.map((d, i) => (
                   <div key={i} className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
                     <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-xs font-semibold text-gray-500">{i + 1}人目</span>
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+                        {i + 1}人目
+                        {d.chainPosition != null && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">
+                            <Link2 size={11} />応援チェーン {d.chainPosition}人目
+                          </span>
+                        )}
+                      </span>
                       {details.length > 1 && (
-                        <button type="button" onClick={() => setDetails(prev => prev.filter((_, idx) => idx !== i))}
+                        <button type="button" onClick={() => removeDetail(i)}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-red-500 hover:bg-red-50 border border-red-200">
                           <Minus size={11} />削除
                         </button>
@@ -1152,6 +1254,19 @@ export function ShiftChangeFormModal({
                         onChange={e => updateDetail(i, { employeeName: e.target.value, suggestTarget: true })}
                         placeholder="例：山田パート"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      {d.chainPosition != null && (() => {
+                        const k = d.chainPosition
+                        const prevStep = chain[k - 2]?.step
+                        const why = k === 1 ? 'この記録の施設'
+                          : k === 2 ? `${prevStep?.employeeName.trim() || '1人目'}さんの代わり`
+                          : `${prevStep?.employeeName.trim() || `${k - 1}人目`}さんの元施設`
+                        return (
+                          <p className="mt-1 text-xs text-indigo-900">
+                            勤務先：<span className="font-semibold">{facName(chainWork[i]) || '（施設・応援元を選んでください）'}</span>
+                            <span className="text-gray-500">（{why}）</span>
+                          </p>
+                        )
+                      })()}
                     </div>
                     <div className="mb-2.5">
                       <label className="block text-xs font-medium text-gray-700 mb-1.5">変更種別 <span className="text-red-500">*</span></label>
@@ -1186,10 +1301,50 @@ export function ShiftChangeFormModal({
                           onChange={(startTime, endTime) => updateDetail(i, { startTime, endTime })}
                         />
                       )}
+                      {d.calendarTarget && d.chainPosition != null && chainWork[i] && chainWork[i] !== form.facilityId && (
+                        <p className="text-xs text-indigo-900">カレンダーには「{facName(chainWork[i])}／{d.changeType}」で入ります</p>
+                      )}
                     </div>
 
-                    {/* 変更後担当（代わりに入る人）。全種別で入力でき、元の対象者とは別にカレンダーへ反映できる */}
-                    {replacementOpen(d) ? (
+                    {/* 応援チェーンの人は、次の応援者を自分の明細で入れる（変更後担当の欄は使わない＝同じ人を2回入れない） */}
+                    {d.chainPosition != null ? (
+                      <div className="mb-2.5 p-2.5 rounded-lg border border-indigo-200 bg-indigo-50/60 space-y-1.5">
+                        {(() => {
+                          const next = chain[d.chainPosition]?.step
+                          const isLast = d.chainPosition === chain.length
+                          return (
+                            <>
+                              {next ? (
+                                <p className="text-xs text-indigo-900">
+                                  代わりに入る人：<span className="font-semibold">{next.employeeName.trim() || '（名前未入力）'}</span>
+                                  <span className="text-gray-500">（応援チェーン{d.chainPosition + 1}人目の明細で入力・カレンダー反映します）</span>
+                                </p>
+                              ) : null}
+                              {isLast && d.chainPosition >= 2 && (
+                                chain.length < MAX_CHAIN && details.length < MAX_TARGETS ? (
+                                  d.supportFromFacilityId ? (
+                                    <button type="button" onClick={continueChain}
+                                      className="text-xs text-indigo-700 underline hover:text-indigo-900">
+                                      ＋ 応援の続きを追加（{d.employeeName.trim() || 'この人'}さんの元施設「{facName(d.supportFromFacilityId)}」へ応援する人）
+                                    </button>
+                                  ) : (
+                                    <p className="text-xs text-gray-500">応援元施設を選ぶと、その施設へ応援する人を続けて追加できます（必要なときだけ）</p>
+                                  )
+                                ) : (
+                                  <p className="text-xs text-gray-500">応援チェーンは{MAX_CHAIN}人まで（明細は全体で{MAX_TARGETS}名まで）です</p>
+                                )
+                              )}
+                              {d.chainPosition === 1 && (
+                                <button type="button" onClick={unlinkChain}
+                                  className="block text-xs text-gray-600 underline hover:text-gray-900">
+                                  応援チェーンを解除（明細は残す）
+                                </button>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </div>
+                    ) : replacementOpen(d) ? (
                       <div className="mb-2.5 p-2.5 rounded-lg border border-teal-200 bg-teal-50/50 space-y-2">
                         <p className="text-xs font-semibold text-teal-900">変更後担当（代わりに入る人） <span className="font-normal text-gray-400">（任意）</span></p>
                         <div className="grid grid-cols-2 gap-2">
@@ -1236,6 +1391,23 @@ export function ShiftChangeFormModal({
                         ＋ 変更後担当（代わりに入る人）を入力
                       </button>
                     )}
+                    {d.chainPosition == null && chain.length === 0 && details.length < MAX_TARGETS && (
+                      <button type="button" onClick={() => startChain(i)}
+                        className="mb-2.5 block text-xs text-indigo-700 underline hover:text-indigo-900">
+                        ＋ 他施設からの応援者をつなぐ（応援チェーン）
+                      </button>
+                    )}
+                    {d.chainPosition != null && d.chainPosition >= 2 ? (
+                      <div className="pt-2 border-t border-gray-200">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">応援元施設（この人がもともと入る施設） <span className="text-red-500">*</span></label>
+                        <select value={d.supportFromFacilityId}
+                          onChange={e => updateDetail(i, { supportFromFacilityId: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                          <option value="">選択してください</option>
+                          {activeFacilities.filter(f => f.id !== chainWork[i] || f.id === d.supportFromFacilityId).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                    ) : (
                     <div className="pt-2 border-t border-gray-200">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input type="checkbox" checked={d.isExternalSupport}
@@ -1258,6 +1430,7 @@ export function ShiftChangeFormModal({
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 ))}
                 {details.length < MAX_TARGETS && (

@@ -7,6 +7,8 @@ interface NotifyDetail {
   changeDetail: string
   isExternalSupport: boolean
   supportFromFacilityName?: string
+  // 応援チェーンで記録の施設と別の施設に入る人の勤務先
+  workFacilityName?: string
 }
 
 interface DayPersonNotify {
@@ -29,6 +31,8 @@ interface NotifyPayload {
   // 単日
   targetDate?: string
   details?: NotifyDetail[]
+  // 応援チェーンの流れ（単日。例：山田（欠勤）← 田中（大塚から）← 佐藤（豊中北から））
+  chainSummary?: string
   // 期間
   isPeriod?: boolean
   startDate?: string
@@ -99,11 +103,13 @@ function buildText(p: NotifyPayload): string {
 
   // 単日：明細をそのまま表示
   if (!p.isPeriod && !p.isMulti && p.details) {
+    if (p.chainSummary) t += `\n【応援の流れ】\n${p.chainSummary}\n`
     t += '\n【対象者】\n'
     p.details.forEach((det, i) => {
       t += `\n${i + 1}. ${det.employeeName}\n`
       t += `   種別：${det.changeType}\n`
       t += `   内容：${det.changeDetail}\n`
+      if (det.workFacilityName) t += `   勤務先：${det.workFacilityName}\n`
       if (det.isExternalSupport) {
         t += `   他施設応援：${det.supportFromFacilityName ?? 'あり'}\n`
       }

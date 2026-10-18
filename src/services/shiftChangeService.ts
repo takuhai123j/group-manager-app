@@ -40,6 +40,8 @@ function toDetail(row: DetailRow): ShiftChangeDetail {
         : null,
     replacementStartTime: row.replacement_start_time ?? null,
     replacementEndTime: row.replacement_end_time ?? null,
+    chainPosition: row.chain_position ?? null,
+    workFacilityId: row.work_facility_id ?? null,
   }
 }
 
@@ -78,6 +80,9 @@ function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftCh
         replacement_calendar_staff_member_id: repTarget?.type === 'staff_member' ? repTarget.id : null,
         replacement_start_time: repTimed ? d.replacementStartTime : null,
         replacement_end_time: repTimed ? d.replacementEndTime : null,
+        // 応援チェーン（チェーン外は送らない＝null）。勤務先はチェーンの明細だけ
+        chain_position: d.chainPosition ?? null,
+        work_facility_id: d.chainPosition != null ? d.workFacilityId ?? null : null,
       }
     }),
   }
@@ -120,7 +125,6 @@ export const shiftChangeService = {
       .order('target_date', { ascending: false })
       .order('created_at', { ascending: false })
 
-    if (filters?.facilityId) query = query.eq('facility_id', filters.facilityId)
     if (filters?.targetDate)  query = query.eq('target_date', filters.targetDate)
     if (filters?.reason)      query = query.ilike('reason', `%${filters.reason}%`)
     if (filters?.handledBy)   query = query.ilike('handled_by', `%${filters.handledBy}%`)
@@ -129,6 +133,12 @@ export const shiftChangeService = {
     if (error) throw error
 
     let records = (data ?? []).map(row => toRecord(row as ParentRow))
+
+    // 施設: 記録の施設か、応援チェーンの勤務先がその施設（client-side）
+    if (filters?.facilityId) {
+      const fid = filters.facilityId
+      records = records.filter(r => r.facilityId === fid || r.details.some(d => d.workFacilityId === fid))
+    }
 
     // 明細側絞り込み（client-side）
     if (filters?.employeeName) {

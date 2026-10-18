@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck } from 'lucide-react'
+import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
 import { ShiftChangeFormModal } from './ShiftChangeFormModal'
@@ -9,6 +9,7 @@ import { HelpButton } from '@/components/help/HelpButton'
 import { HelpModal } from '@/components/help/HelpModal'
 import { HELP_CONTENT } from '@/constants/helpContent'
 import { formatCalendarTime, targetKey } from '@/lib/shiftChangeCalendar'
+import { chainSteps, chainSummary } from '@/lib/shiftChangeChain'
 import type {
   ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters, GroupManager, StaffMember,
 } from '@/lib/types'
@@ -276,6 +277,11 @@ export function ShiftChangeManager({
                     <span>対応者：{r.handledBy}</span>
                   </div>
 
+                  {chainSteps(r.details).length > 0 && (
+                    <p className="mb-1.5 inline-flex flex-wrap items-center gap-1 text-xs text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-1">
+                      <Link2 size={11} />応援の流れ：{chainSummary(r.details, id => facilityMap.get(id))}
+                    </p>
+                  )}
                   <div className="space-y-1.5">
                     {r.details.map((d, i) => {
                       const supportName = d.supportFromFacilityId ? facilityMap.get(d.supportFromFacilityId) : null
@@ -293,6 +299,11 @@ export function ShiftChangeManager({
                           {d.isExternalSupport && (
                             <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
                               他施設応援{supportName ? `：${supportName}` : ''}
+                            </span>
+                          )}
+                          {d.workFacilityId && d.workFacilityId !== r.facilityId && (
+                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-white text-indigo-800 border border-indigo-300">
+                              勤務先：{facilityMap.get(d.workFacilityId) ?? '（不明）'}
                             </span>
                           )}
                           {d.calendarTarget && (

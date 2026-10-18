@@ -339,6 +339,8 @@ export type Database = {
           replacement_calendar_staff_member_id: string | null
           replacement_start_time: string | null
           replacement_end_time: string | null
+          work_facility_id: string | null
+          chain_position: number | null
         }
         Insert: {
           id?: string

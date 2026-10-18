@@ -188,6 +188,9 @@ export interface ShiftChangeDetail {
   replacementCalendarTarget: MeetingAssigneeRef | null
   replacementStartTime: string | null
   replacementEndTime: string | null
+  // 応援チェーン（1〜5。チェーン外は null）と、その人の勤務先（チェーンの明細だけ。null は記録の施設）
+  chainPosition: number | null
+  workFacilityId: string | null
 }
 
 export interface ShiftChangeRecord {
@@ -220,6 +223,8 @@ export type CreateShiftChangeDetailInput = {
   replacementCalendarTarget?: MeetingAssigneeRef | null
   replacementStartTime?: string | null
   replacementEndTime?: string | null
+  chainPosition?: number | null
+  workFacilityId?: string | null
 }
 
 export type CreateShiftChangeInput = {
