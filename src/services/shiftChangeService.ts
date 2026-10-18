@@ -11,6 +11,35 @@ type ParentRow = Database['public']['Tables']['shift_change_records']['Row'] & {
   shift_change_details: DetailRow[] | null
 }
 
+// 記録の取得クエリ（select の後に条件・並び順を足していく）の型
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RecordsQuery = any
+
+// 1回の取得上限（Supabase の max-rows。既定1000）を超えても取りこぼさないよう、空のページが返るまで続けて読む。
+// 上限が1000より小さく設定されていても、返ってきた件数だけ進めるので取りこぼさない
+async function fetchAllPages<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const PAGE = 1000
+  const all: T[] = []
+  for (let from = 0; ; ) {
+    const { data, error } = await fetchPage(from, from + PAGE - 1)
+    if (error) throw error
+    const page = data ?? []
+    if (page.length === 0) break
+    all.push(...page)
+    from += page.length
+  }
+  return all
+}
+
+// 一覧の並び順（対象日の新しい順 → 登録の新しい順 → id）
+function compareRecordRows(a: ParentRow, b: ParentRow): number {
+  if (a.target_date !== b.target_date) return a.target_date < b.target_date ? 1 : -1
+  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
 function toDetail(row: DetailRow): ShiftChangeDetail {
   return {
     id: row.id,
@@ -51,6 +80,9 @@ function toRpcRecord(id: string, mode: 'create' | 'update', input: CreateShiftCh
   return {
     id,
     mode,
+    // 応援チェーン・変更後担当のカレンダー反映を扱える画面であることの印。
+    // これがない古い画面（開いたままのタブ）は、それらを持つ記録を上書きできない（RPC が SCC_STALE_CLIENT で止める）
+    chain_aware: true,
     facility_id: input.facilityId,
     target_date: input.targetDate,
     reason: input.reason,
@@ -119,55 +151,59 @@ function toRecord(row: ParentRow): ShiftChangeRecord {
 export const shiftChangeService = {
   async getAll(filters?: Partial<ShiftChangeFilters>): Promise<ShiftChangeRecord[]> {
     const supabase = createClient()
-    let query = supabase
-      .from('shift_change_records')
-      .select('*, facilities(name), shift_change_details(*)')
-      .order('target_date', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    // 施設: 記録の施設か、応援チェーンの勤務先がその施設の記録。勤務先は明細側にあるので、
-    // 先に該当する記録IDを明細から引き、「記録の施設 または そのID」でサーバー側で絞る（全件取得の上限で漏れないように）
-    if (filters?.facilityId) {
-      const fid = filters.facilityId
-      const { data: chainRows, error: chainError } = await supabase
-        .from('shift_change_details').select('record_id').eq('work_facility_id', fid)
-      if (chainError) throw chainError
-      const chainIds = Array.from(new Set((chainRows ?? []).map(r => r.record_id)))
-      query = chainIds.length > 0
-        ? query.or(`facility_id.eq.${fid},id.in.(${chainIds.join(',')})`)
-        : query.eq('facility_id', fid)
+    // 記録の取得（施設以外のサーバー側の条件と並び順をそろえる）。
+    // 1回の取得には上限（Supabase は既定で1000行）があるので、fetchAllPages で全ページ読む
+    const records = (from: number, to: number, narrow: (q: RecordsQuery) => RecordsQuery) => {
+      let q: RecordsQuery = supabase
+        .from('shift_change_records')
+        .select('*, facilities(name), shift_change_details(*)')
+      q = narrow(q)
+      if (filters?.targetDate) q = q.eq('target_date', filters.targetDate)
+      if (filters?.reason)     q = q.ilike('reason', `%${filters.reason}%`)
+      if (filters?.handledBy)  q = q.ilike('handled_by', `%${filters.handledBy}%`)
+      // ページをまたいでも順番がぶれないよう、最後に id でも並べる
+      return q.order('target_date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)
     }
-    if (filters?.targetDate)  query = query.eq('target_date', filters.targetDate)
-    if (filters?.reason)      query = query.ilike('reason', `%${filters.reason}%`)
-    if (filters?.handledBy)   query = query.ilike('handled_by', `%${filters.handledBy}%`)
 
-    const { data, error } = await query
-    if (error) throw error
-
-    let records = (data ?? []).map(row => toRecord(row as ParentRow))
-
-    // 施設: 記録の施設か、応援チェーンの勤務先がその施設（client-side）
+    let rows: ParentRow[]
     if (filters?.facilityId) {
+      // 施設: 記録の施設がその施設の記録 ＋ 応援チェーンの勤務先がその施設の記録。
+      // 勤務先は明細側にあるので、該当する記録IDを明細から引き、記録の施設で取った分に無いものだけ ID で取り足す
+      // （ID の数が多くても URL が長くなりすぎないよう、100件ずつに分ける）
       const fid = filters.facilityId
-      records = records.filter(r => r.facilityId === fid || r.details.some(d => d.workFacilityId === fid))
+      const own = await fetchAllPages<ParentRow>((from, to) => records(from, to, q => q.eq('facility_id', fid)))
+      const chainRows = await fetchAllPages<{ record_id: string }>((from, to) =>
+        supabase.from('shift_change_details').select('record_id').eq('work_facility_id', fid).order('id', { ascending: true }).range(from, to))
+      const ownIds = new Set(own.map(r => r.id))
+      const extraIds = Array.from(new Set(chainRows.map(r => r.record_id))).filter(id => !ownIds.has(id))
+      const extra: ParentRow[] = []
+      for (let i = 0; i < extraIds.length; i += 100) {
+        const chunk = extraIds.slice(i, i + 100)
+        extra.push(...await fetchAllPages<ParentRow>((from, to) => records(from, to, q => q.in('id', chunk))))
+      }
+      rows = [...own, ...extra].sort(compareRecordRows)
+    } else {
+      rows = await fetchAllPages<ParentRow>((from, to) => records(from, to, q => q))
     }
+
+    let list = rows.map(row => toRecord(row))
 
     // 明細側絞り込み（client-side）
     if (filters?.employeeName) {
       const kw = filters.employeeName.toLowerCase()
-      records = records.filter(r => r.details.some(d => d.employeeName.toLowerCase().includes(kw)))
+      list = list.filter(r => r.details.some(d => d.employeeName.toLowerCase().includes(kw)))
     }
     if (filters?.changeType) {
-      records = records.filter(r => r.details.some(d => d.changeType === filters.changeType))
+      list = list.filter(r => r.details.some(d => d.changeType === filters.changeType))
     }
     if (filters?.isExternalSupport === 'true') {
-      records = records.filter(r => r.details.some(d => d.isExternalSupport))
+      list = list.filter(r => r.details.some(d => d.isExternalSupport))
     }
     if (filters?.supportFacilityId) {
-      records = records.filter(r => r.details.some(d => d.supportFromFacilityId === filters.supportFacilityId))
+      list = list.filter(r => r.details.some(d => d.supportFromFacilityId === filters.supportFacilityId))
     }
 
-    return records
+    return list
   },
 
   async getById(id: string): Promise<ShiftChangeRecord> {
