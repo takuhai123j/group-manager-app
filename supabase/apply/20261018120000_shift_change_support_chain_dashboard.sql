@@ -52,6 +52,9 @@ END $guard$;
 --   ・チェーンの人は次の応援者として明細を持つので、チェーンの明細では変更後担当のカレンダー反映を受け付けない（二重入力の防止）
 --   ・RPC は同じ名前・引数・戻り値で置き換える（実行権限・SECURITY INVOKER・search_path は保たれる）。
 --     チェーンの項目を送らない従来の画面・期間・複数日の呼び出しは、チェーンなしとして従来どおり動く
+--   ・古い画面からの上書き防止: 応援チェーン・変更後担当のカレンダー反映を持つ既存の記録は、
+--     chain_aware: true を送る画面（このSQLと同時に公開する画面）からだけ保存できる（SCC_STALE_CLIENT）。
+--     それ以外の記録・新規登録は従来どおり
 -- =======================================================
 
 -- -------------------------------------------------------
@@ -184,6 +187,18 @@ BEGIN
   FOR r IN SELECT value FROM jsonb_array_elements(p_records) LOOP
     v_id := (r->>'id')::uuid;
     v_mode := r->>'mode';
+
+    -- 古い画面（開いたままのタブ）からの上書きを止める。応援チェーン・変更後担当のカレンダー反映を持つ既存の記録は、
+    -- それらを扱える画面（chain_aware: true を送る）からだけ保存できる。古い画面はこれらの項目を送らないため、
+    -- そのまま保存させると何も言わずに消えてしまう。ロックの後で確かめるので同時編集でもすり抜けない
+    IF coalesce((r->>'chain_aware')::boolean, false) = false AND EXISTS (
+      SELECT 1 FROM public.shift_change_details x
+       WHERE x.record_id = v_id
+         AND (x.chain_position IS NOT NULL OR x.work_facility_id IS NOT NULL
+              OR x.replacement_calendar_group_manager_id IS NOT NULL OR x.replacement_calendar_staff_member_id IS NOT NULL)
+    ) THEN
+      RAISE EXCEPTION 'SCC_STALE_CLIENT: この記録には新しい画面で入力した項目（応援チェーン・変更後担当のカレンダー反映）があります。ページを再読み込みしてから編集し直してください' USING ERRCODE = 'P0001';
+    END IF;
 
     IF v_mode = 'update' THEN
       UPDATE public.shift_change_records SET
