@@ -278,10 +278,10 @@ function ChangeDetailTextField({ draft, required, onChange }: {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2 mb-1">
-        <label className="text-xs font-medium text-gray-700">
+        <label className="flex-shrink-0 whitespace-nowrap text-xs font-medium text-gray-700">
           変更内容 {required ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">（任意）</span>}
         </label>
-        <span className="text-[11px] text-gray-400">
+        <span className="min-w-0 text-right text-[11px] text-gray-400">
           {showingSaved ? '保存済みの文章（種別・シフトを変えても自動では変わりません）' : draft.detailAuto ? '種別・シフトから自動作成（書き換えできます）' : '手入力'}
         </span>
       </div>
