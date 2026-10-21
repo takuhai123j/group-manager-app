@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { X, Save, Trash2, Plus, Minus, CheckSquare, Link2 } from 'lucide-react'
 import { cn, toDateString } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES } from '@/lib/types'
@@ -311,6 +311,14 @@ function ChangeDetailTextField({ draft, place, required, warning, onChange }: {
 }) {
   const generated = generatedDetail(draft, place)
   const saved = draft.savedDetail ?? null
+  // 文章の長さに合わせて高さを広げる（施設名が長いと2行に収まらず、後ろが隠れるため。最低2行）
+  const textRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }, [draft.changeDetail])
   const showingSaved = saved !== null && draft.changeDetail === saved
   // 保存済みの文章を置き換えるときだけ確認する（キャンセルなら何も変えない。保存するまで記録は変わらない）
   const rebuild = () => {
@@ -327,7 +335,7 @@ function ChangeDetailTextField({ draft, place, required, warning, onChange }: {
           {showingSaved ? '保存済みの文章（種別・シフト・施設を変えても自動では変わりません）' : draft.detailAuto ? '種別・シフト・施設から自動作成（書き換え可）' : '手入力'}
         </span>
       </div>
-      <textarea value={draft.changeDetail}
+      <textarea ref={textRef} value={draft.changeDetail}
         onChange={e => onChange({ changeDetail: e.target.value, detailAuto: false })}
         rows={2} placeholder="例：9:00-13:00 → 14:00-19:00"
         className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
