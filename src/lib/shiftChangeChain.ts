@@ -60,3 +60,18 @@ export function chainSummary<T extends ChainStepLike>(details: T[], facilityName
     return `${name}（${from ? `${from}から` : '応援元未選択'}）`
   }).join(' ← ')
 }
+
+// 変更内容の文章に入れる、明細ごとの勤務元（変更前）・勤務先（変更後）の施設（わからなければ null）。
+// 勤務先はチェーンなら順番から決まる施設（前の人の応援元が未選択なら null）、それ以外は記録の施設。
+// 勤務元は他施設からの応援なら応援元施設（未選択なら null）、それ以外は勤務先と同じ
+export function detailPlaceFacilities<T extends ChainStepLike & { isExternalSupport: boolean }>(
+  details: T[], recordFacilityId: string,
+): { before: string | null; after: string | null; inChain: boolean }[] {
+  const work = chainWorkFacilities(details, recordFacilityId)
+  return details.map((d, i) => {
+    const inChain = d.chainPosition != null
+    const after = inChain ? work[i] : recordFacilityId || null
+    const before = d.isExternalSupport ? d.supportFromFacilityId || null : after
+    return { before, after, inChain }
+  })
+}

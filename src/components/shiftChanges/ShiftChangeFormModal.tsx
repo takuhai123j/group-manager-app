@@ -14,7 +14,7 @@ import {
 import { shiftChangeErrorMessage } from '@/services/shiftChangeService'
 import { CalendarTargetField, CalendarTimeFields } from './CalendarTargetField'
 import { buildChangeDetailText, usesAfterShift } from '@/lib/shiftChangeDetailText'
-import { chainSteps, chainWorkFacilities, validateChain, chainSummary, MAX_CHAIN } from '@/lib/shiftChangeChain'
+import { chainSteps, chainWorkFacilities, validateChain, chainSummary, detailPlaceFacilities, MAX_CHAIN } from '@/lib/shiftChangeChain'
 
 interface Props {
   isOpen: boolean
@@ -219,17 +219,21 @@ type ChangeDetailDraft = {
   savedDetail?: string | null
 }
 
+// 文章に入れる勤務元・勤務先の施設名（記録の施設・応援元施設・応援チェーンの勤務先から決める）
+type DetailPlace = { beforeFacility?: string; afterFacility?: string; omitReplacement?: boolean }
+
 // 入力から作る変更内容の文章
-function generatedDetail(d: ChangeDetailDraft): string {
+function generatedDetail(d: ChangeDetailDraft, place?: DetailPlace): string {
   return buildChangeDetailText({
     changeType: d.changeType, beforeShift: d.originalShift, afterShift: d.afterShift,
     replacementName: d.replacementName, replacementOriginalShift: d.replacementOriginalShift,
+    ...place,
   })
 }
 
 // 自動のままの明細だけ、入力に合わせて文章を作り直す（手で書き換えた文章・保存済みの文章はそのまま）
-function withAutoDetail<T extends ChangeDetailDraft>(d: T): T {
-  return d.detailAuto ? { ...d, changeDetail: generatedDetail(d) } : d
+function withAutoDetail<T extends ChangeDetailDraft>(d: T, place?: DetailPlace): T {
+  return d.detailAuto ? { ...d, changeDetail: generatedDetail(d, place) } : d
 }
 
 // 応援チェーンの明細をそろえる。順番を1から振り直し、各人は次の応援者を変更後担当（名前・元シフト）として持つ。
@@ -302,10 +306,10 @@ function ShiftBeforeAfterFields({ draft, onChange }: { draft: ChangeDetailDraft;
 
 // 変更内容。自動のあいだは入力に合わせて文章が変わり、書き換えたら以後は自動で変えない。
 // 手入力（保存済みの記録を含む）のときは、押した場合だけ入力内容から作り直す
-function ChangeDetailTextField({ draft, required, warning, onChange }: {
-  draft: ChangeDetailDraft; required?: boolean; warning?: string | null; onChange: (patch: DetailPatch) => void
+function ChangeDetailTextField({ draft, place, required, warning, onChange }: {
+  draft: ChangeDetailDraft; place?: DetailPlace; required?: boolean; warning?: string | null; onChange: (patch: DetailPatch) => void
 }) {
-  const generated = generatedDetail(draft)
+  const generated = generatedDetail(draft, place)
   const saved = draft.savedDetail ?? null
   const showingSaved = saved !== null && draft.changeDetail === saved
   // 保存済みの文章を置き換えるときだけ確認する（キャンセルなら何も変えない。保存するまで記録は変わらない）
@@ -320,7 +324,7 @@ function ChangeDetailTextField({ draft, required, warning, onChange }: {
           変更内容 {required ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">（任意）</span>}
         </label>
         <span className="min-w-0 text-right text-[11px] text-gray-400">
-          {showingSaved ? '保存済みの文章（種別・シフトを変えても自動では変わりません）' : draft.detailAuto ? '種別・シフトから自動作成（書き換えできます）' : '手入力'}
+          {showingSaved ? '保存済みの文章（種別・シフト・施設を変えても自動では変わりません）' : draft.detailAuto ? '種別・シフト・施設から自動作成（書き換え可）' : '手入力'}
         </span>
       </div>
       <textarea value={draft.changeDetail}
@@ -544,13 +548,41 @@ export function ShiftChangeFormModal({
   const setPeriodField = <K extends keyof typeof periodForm>(key: K, val: string) =>
     setPeriodForm(prev => ({ ...prev, [key]: val }))
 
+  // ── 変更内容の施設名 ──
+  const facName = (id: string | null | undefined) => (id ? facilities.find(f => f.id === id)?.name : undefined) ?? ''
+  // 単日の明細ごとの勤務元・勤務先の施設名（応援チェーンでは次の応援者を文章に重ねない）
+  const singlePlaces = (list: DetailDraft[], recordFacilityId: string): DetailPlace[] =>
+    detailPlaceFacilities(list, recordFacilityId).map(p => ({
+      beforeFacility: facName(p.before), afterFacility: facName(p.after), omitReplacement: p.inChain,
+    }))
+  // チェーンをそろえてから、自動のままの文章を施設名つきで作り直す（記録の施設を変えたときは新しい施設で）
+  const syncDetails = (list: DetailDraft[], recordFacilityId = form.facilityId): DetailDraft[] => {
+    const normalized = normalizeChain(list)
+    const places = singlePlaces(normalized, recordFacilityId)
+    return normalized.map((d, i) => withAutoDetail(d, places[i]))
+  }
+  // 期間・複数日の勤務元・勤務先（勤務先は記録の施設。応援チェーンはない）
+  const dayPlace = (p: Pick<DayPersonDraft, 'isExternalSupport' | 'supportFromFacilityId'>, recordFacilityId = periodForm.facilityId): DetailPlace => ({
+    beforeFacility: facName(p.isExternalSupport ? p.supportFromFacilityId : recordFacilityId),
+    afterFacility: facName(recordFacilityId),
+  })
+  // 施設を変えたら、自動のままの文章だけ新しい施設名で作り直す
+  const changeRecordFacility = (val: string) => {
+    setField('facilityId', val)
+    setDetails(prev => syncDetails(prev, val))
+  }
+  const changePeriodFacility = (val: string) => {
+    setPeriodField('facilityId', val)
+    setDayDrafts(prev => prev.map(d => ({ ...d, persons: d.persons.map(p => withAutoDetail(p, dayPlace(p, val))) })))
+  }
+
   const updateDetail = (i: number, patch: Partial<DetailDraft>) =>
-    setDetails(prev => normalizeChain(prev.map((d, idx) => idx === i ? withAutoDetail({ ...d, ...patch }) : d)))
+    setDetails(prev => syncDetails(prev.map((d, idx) => idx === i ? { ...d, ...patch } : d)))
 
   // ── 応援チェーン（単日） ──
-  const facName = (id: string | null | undefined) => (id ? facilities.find(f => f.id === id)?.name : undefined) ?? ''
   const chain = chainSteps(details)
   const chainWork = chainWorkFacilities(details, form.facilityId)
+  const detailPlaces = singlePlaces(details, form.facilityId)
   // この明細を1人目にして、2人目（他施設からの応援者）の明細をすぐ後ろに足す。
   // 1人目の変更後担当に入れていた名前・元シフト・カレンダー反映は2人目の明細へ移す（同じ人を2回入れないため）
   const startChain = (i: number) => setDetails(prev => {
@@ -570,7 +602,7 @@ export function ShiftChangeFormModal({
     const next = [...prev]
     next[i] = { ...head, chainPosition: 1 }
     next.splice(i + 1, 0, second)
-    return normalizeChain(next)
+    return syncDetails(next)
   })
   // 最後の応援者の元施設へ応援する人を、必要なときだけ足す（交代出勤を選んでも自動では足さない）
   const continueChain = () => setDetails(prev => {
@@ -579,23 +611,23 @@ export function ShiftChangeFormModal({
     const added: DetailDraft = withAutoDetail({ ...EMPTY_DETAIL, changeType: '交代出勤', isExternalSupport: true, chainPosition: steps.length + 1 })
     const next = [...prev]
     next.splice(last.index + 1, 0, added)
-    return normalizeChain(next)
+    return syncDetails(next)
   })
   // 明細の削除。チェーンの2人目以降を消すと後ろの応援者のつながりも切れるので一緒に消す（確認する）。1人目を消すとチェーンを解除する
   const removeDetail = (i: number) => {
     const d = details[i]
-    if (d.chainPosition == null) { setDetails(prev => prev.filter((_, idx) => idx !== i)); return }
+    if (d.chainPosition == null) { setDetails(prev => syncDetails(prev.filter((_, idx) => idx !== i))); return }
     if (d.chainPosition === 1) {
       if (!confirm(`応援チェーンの1人目（${d.employeeName.trim() || '名前未入力'}）を削除すると、応援チェーンは解除されます（2人目以降は通常の明細として残ります）。削除しますか？`)) return
       setRemovedChainNames(prev => [...prev, d.employeeName.trim()].filter(Boolean))
-      setDetails(prev => prev.filter((_, idx) => idx !== i).map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x))
+      setDetails(prev => syncDetails(prev.filter((_, idx) => idx !== i).map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x)))
       return
     }
     const removed = chain.filter(s => (s.step.chainPosition ?? 0) >= d.chainPosition!)
     if (!confirm(`次の明細を削除しますか？${removed.length > 1 ? '（後ろの応援者もつながりが切れるため一緒に削除します）' : ''}\n\n${removed.map(s => `応援チェーン${s.step.chainPosition}人目：${s.step.employeeName.trim() || '名前未入力'}`).join('\n')}`)) return
     const drop = new Set(removed.map(s => s.index))
     setRemovedChainNames(prev => [...prev, ...removed.map(s => s.step.employeeName.trim())].filter(Boolean))
-    setDetails(prev => normalizeChain(prev.filter((_, idx) => !drop.has(idx))))
+    setDetails(prev => syncDetails(prev.filter((_, idx) => !drop.has(idx))))
   }
   // 変更内容（手入力・保存済み）に、今は代わりに入っていない人の名前が残っていないか。
   // ① チェーンの操作で変更後担当が変わった明細で「変更後担当：○○」が今の変更後担当と違う
@@ -619,13 +651,13 @@ export function ShiftChangeFormModal({
   // チェーンだけを解除する（明細はすべて残す。2人目以降の勤務先は記録の施設の扱いに戻る）
   const unlinkChain = () => {
     if (!confirm('応援チェーンを解除しますか？\n明細は残りますが、2人目以降の勤務先は記録の施設として扱われます（カレンダーの施設も記録の施設になります）。')) return
-    setDetails(prev => prev.map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x))
+    setDetails(prev => syncDetails(prev.map(x => x.chainPosition != null ? { ...x, chainPosition: null } : x)))
   }
 
   const updateDayPerson = (dayIdx: number, personIdx: number, patch: Partial<DayPersonDraft>) =>
     setDayDrafts(prev => prev.map((d, di) => di !== dayIdx ? d : {
       ...d,
-      persons: d.persons.map((p, pi) => pi === personIdx ? withAutoDetail({ ...p, ...patch }) : p),
+      persons: d.persons.map((p, pi) => pi === personIdx ? withAutoDetail({ ...p, ...patch }, dayPlace({ ...p, ...patch })) : p),
     }))
 
   const addPersonName = () => {
@@ -672,7 +704,7 @@ export function ShiftChangeFormModal({
   const CLEAR_REPLACEMENT_TARGET = { replacementCalendarTarget: null, replacementStartTime: '', replacementEndTime: '' } as const
   // 単日: 変更後担当の名前を別人に変えたら、前の名前で選んだ反映先・時刻を外して提案し直す
   const updateDetailReplacementName = (i: number, val: string) =>
-    setDetails(prev => prev.map((d, idx) => idx !== i ? d : withAutoDetail({
+    setDetails(prev => syncDetails(prev.map((d, idx) => idx !== i ? d : {
       ...d,
       replacementName: val,
       suggestReplacementTarget: true,
@@ -686,7 +718,7 @@ export function ShiftChangeFormModal({
         ...p,
         replacementName: val,
         ...(typedNameKey(val) !== typedNameKey(p.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
-      })),
+      }, dayPlace(p))),
     }))
   const updateDayReplacementTarget = (dayIdx: number, personIdx: number, target: MeetingAssigneeRef | null) =>
     updateDayPerson(dayIdx, personIdx, target ? { replacementCalendarTarget: target } : CLEAR_REPLACEMENT_TARGET)
@@ -711,6 +743,7 @@ export function ShiftChangeFormModal({
   const applyBulk = () => {
     // カレンダーの時刻は一括で入れたときだけ全日に入れる（空なら日ごとの時刻をそのまま残す）。反映先（元の対象者）は変えない
     const bulkTimed = !!bulk.startTime && !!bulk.endTime
+    const bulkPlace = dayPlace(bulk)
     const next = dayDrafts.map(d => ({
       ...d,
       // 「全日に適用」は全日の入力をまとめて置き換える操作なので、変更内容も入力から作り直す（その後の手修正は可能）
@@ -728,7 +761,7 @@ export function ShiftChangeFormModal({
         endTime: bulkTimed ? bulk.endTime : existing.endTime,
         // 一括で変更後担当を別の人にした日は、前の変更後担当の反映先を外す（別人のカレンダーに入らないように）
         ...(typedNameKey(bulk.replacementName) !== typedNameKey(existing.replacementName) ? CLEAR_REPLACEMENT_TARGET : {}),
-      })),
+      }, bulkPlace)),
     }))
     // 手で書き換えた変更内容を上書きする日・変更後担当の反映先が外れる日があれば、日付を示して確認する（キャンセルなら何も変えない）
     const changes: string[] = []
@@ -1246,7 +1279,7 @@ export function ShiftChangeFormModal({
             <>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">施設 <span className="text-red-500">*</span></label>
-                <select value={form.facilityId} onChange={e => setField('facilityId', e.target.value)}
+                <select value={form.facilityId} onChange={e => changeRecordFacility(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">選択してください</option>
                   {activeFacilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1321,7 +1354,7 @@ export function ShiftChangeFormModal({
                     </div>
                     <div className="mb-2.5 space-y-2">
                       <ShiftBeforeAfterFields draft={d} onChange={patch => updateDetail(i, patch)} />
-                      <ChangeDetailTextField draft={d} required warning={staleNameWarning(d)} onChange={patch => updateDetail(i, patch)} />
+                      <ChangeDetailTextField draft={d} place={detailPlaces[i]} required warning={staleNameWarning(d)} onChange={patch => updateDetail(i, patch)} />
                     </div>
                     <div className="mb-2.5 space-y-2">
                       <CalendarTargetField
@@ -1647,7 +1680,7 @@ export function ShiftChangeFormModal({
               {/* 共通：施設 */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">施設 <span className="text-red-500">*</span></label>
-                <select value={periodForm.facilityId} onChange={e => setPeriodField('facilityId', e.target.value)}
+                <select value={periodForm.facilityId} onChange={e => changePeriodFacility(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">選択してください</option>
                   {activeFacilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1748,7 +1781,7 @@ export function ShiftChangeFormModal({
                       </div>
                     </div>
                     <p className="mb-2.5 text-xs text-gray-500">
-                      変更内容は「{generatedDetail({ ...bulk, changeDetail: '', detailAuto: true }) || '（シフトを入れると作成）'}」で全日に入り、適用後に日ごとに書き換えられます
+                      変更内容は「{generatedDetail({ ...bulk, changeDetail: '', detailAuto: true }, dayPlace(bulk)) || '（シフトを入れると作成）'}」で全日に入り、適用後に日ごとに書き換えられます
                     </p>
                     <div className="mb-2.5 pt-2 border-t border-blue-200">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1855,7 +1888,7 @@ export function ShiftChangeFormModal({
 
                           {/* 変更内容（自動作成・書き換え可） */}
                           <div className="mb-2">
-                            <ChangeDetailTextField draft={p} onChange={patch => updateDayPerson(dayIdx, personIdx, patch)} />
+                            <ChangeDetailTextField draft={p} place={dayPlace(p)} onChange={patch => updateDayPerson(dayIdx, personIdx, patch)} />
                           </div>
 
                           {/* 変更後担当のカレンダー反映（日付ごと。元の対象者とは別に設定する） */}

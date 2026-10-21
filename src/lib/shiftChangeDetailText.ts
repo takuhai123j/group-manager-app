@@ -8,12 +8,20 @@ export type ChangeDetailSource = {
   afterShift?: string | null
   replacementName?: string | null
   replacementOriginalShift?: string | null
+  // 変更前の勤務元・変更後の勤務先の施設名（わかるときだけ。時刻の入ったシフトの前に付ける）
+  beforeFacility?: string | null
+  afterFacility?: string | null
+  // 変更後担当を文章に入れない（応援チェーン：次の応援者は自分の明細に書くので重ねない）
+  omitReplacement?: boolean
 }
 
 // 変更後シフトの入力欄を出す種別（欠勤・振休は「休み」になるだけなので出さない）
 export function usesAfterShift(changeType: string): boolean {
   return changeType !== '欠勤' && changeType !== '振休'
 }
+
+// 時刻の入ったシフトか（「休み」「公休」などには施設名を付けない）
+const hasTime = (shift: string) => /[0-9０-９]/.test(shift)
 
 // 「変更前 → 変更後」の部分。どちらか片方だけでも読める形にする
 function shiftChange(before: string, after: string): string {
@@ -24,8 +32,14 @@ function shiftChange(before: string, after: string): string {
 }
 
 export function buildChangeDetailText(src: ChangeDetailSource): string {
-  const before = (src.beforeShift ?? '').trim()
-  const after = (src.afterShift ?? '').trim()
+  const rawBefore = (src.beforeShift ?? '').trim()
+  const rawAfter = (src.afterShift ?? '').trim()
+  const beforeFac = (src.beforeFacility ?? '').trim()
+  const afterFac = (src.afterFacility ?? '').trim()
+  // 変更前には勤務元の施設名を付ける。変更後には勤務先の施設名を付けるが、変更前に同じ施設名を付けたときは繰り返さない
+  const beforePlaced = !!beforeFac && hasTime(rawBefore)
+  const before = beforePlaced ? `${beforeFac} ${rawBefore}` : rawBefore
+  const after = afterFac && hasTime(rawAfter) && !(beforePlaced && beforeFac === afterFac) ? `${afterFac} ${rawAfter}` : rawAfter
   const type = src.changeType
 
   let main: string
@@ -50,7 +64,7 @@ export function buildChangeDetailText(src: ChangeDetailSource): string {
       main = shiftChange(before, after)
   }
 
-  const rep = (src.replacementName ?? '').trim()
+  const rep = src.omitReplacement ? '' : (src.replacementName ?? '').trim()
   if (!rep) return main
   const repShift = (src.replacementOriginalShift ?? '').trim()
   const repText = `変更後担当：${rep}${repShift ? `（元：${repShift}）` : ''}`
