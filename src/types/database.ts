@@ -276,7 +276,8 @@ export type Database = {
       shift_change_records: {
         Row: {
           id: string
-          facility_id: string
+          // 勤務・休日振替の記録だけ NULL を許す（通常のシフト変更は DB の CHECK で施設必須）
+          facility_id: string | null
           target_date: string
           reason: string
           handled_by: string
@@ -284,6 +285,10 @@ export type Database = {
           created_at: string
           updated_at: string
           related_change_group_id: string | null
+          // 勤務・休日振替（20261119120000）。振替の記録だけが持つ（3つそろって入る）
+          swap_id: string | null
+          swap_role: 'work' | 'off' | null
+          swap_person_key: string | null
         }
         Insert: {
           id?: string
@@ -503,6 +508,54 @@ export type Database = {
           },
         ]
       }
+      // 勤務・休日振替（振替出勤日・振替休日の2件の記録を束ねる）。anon は SELECT のみ（保存・取消は RPC だけ）
+      shift_change_swaps: {
+        Row: {
+          id: string
+          person_group_manager_id: string | null
+          person_staff_member_id: string | null
+          person_key: string
+          show_on_calendar: boolean
+          work_content: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: { [_ in never]: never }
+        Update: { [_ in never]: never }
+        Relationships: []
+      }
+      // 振替の操作（登録・変更・取消）と本部への通知の状態。anon は状態の列だけ SELECT 可（内容・確保の印は不可。書き込みは RPC だけ）
+      shift_change_swap_operations: {
+        Row: {
+          id: string
+          swap_id: string
+          action: 'create' | 'update' | 'cancel'
+          person_name: string
+          work_date: string
+          off_date: string
+          created_at: string
+          notify_status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown' | 'needs_check'
+          notify_attempts: number
+          notify_claimed_at: string | null
+          notify_sent_at: string | null
+          notify_last_error: string | null
+          notify_manually_confirmed: boolean
+        }
+        Insert: { [_ in never]: never }
+        Update: { [_ in never]: never }
+        Relationships: []
+      }
+      // 振替出勤日に非表示にする本人の手動の公休。anon は SELECT のみ
+      shift_change_swap_hidden_schedules: {
+        Row: {
+          schedule_id: string
+          swap_id: string
+          created_at: string
+        }
+        Insert: { [_ in never]: never }
+        Update: { [_ in never]: never }
+        Relationships: []
+      }
       // 同時開催グループ（同一施設の施設MT＋厨房MT）。anon は SELECT/INSERT/DELETE のみ（UPDATE不可）
       meeting_joint_groups: {
         Row: {
@@ -654,6 +707,30 @@ export type Database = {
       shift_change_save_batch: {
         Args: { p_records: unknown }
         Returns: string[]
+      }
+      // 勤務・休日振替の保存（2日分・自動予定・公休の非表示をまとめて保存。SECURITY DEFINER・anon のみ）
+      shift_change_swap_save: {
+        Args: { p_swap: unknown }
+        Returns: { id: string; updated_at: string; operation_id: string }
+      }
+      // 勤務・休日振替の取消（2日分をまとめて削除。操作IDごとに1回だけ。取消前の内容を返す）
+      shift_change_swap_delete: {
+        Args: { p_swap_id: string; p_expected_updated_at: string; p_operation_id: string }
+        Returns: unknown
+      }
+      // 本部への通知: 送信の確保 / 結果の記録（service_role だけ。通知 API がサーバー専用キーで呼ぶ）。
+      // 要確認の片付け（notify_resolve）は API からは実行できない（Dashboard の管理者だけ）
+      shift_change_swap_notify_claim: {
+        Args: { p_operation_id: string }
+        Returns: unknown
+      }
+      shift_change_swap_notify_finish: {
+        Args: { p_operation_id: string; p_claim_token: string; p_outcome: string; p_message_id: string | null; p_error: string | null }
+        Returns: unknown
+      }
+      shift_change_swap_notify_resolve: {
+        Args: { p_operation_id: string; p_resolution: string }
+        Returns: unknown
       }
       mt_join_meetings: {
         Args: {

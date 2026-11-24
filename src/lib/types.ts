@@ -14,6 +14,8 @@ export type EventType =
   | 'han_yukyu'     // 半有休（時間指定・4時間）
   | 'other'         // その他
   | 'shift_change'  // シフト変更（シフト変更記録からの自動登録専用。手動では選べない）
+  | 'furikae_work'  // 振替出勤（勤務・休日振替からの自動登録専用。休日出勤とは別の区分）
+  | 'furikae_off'   // 振替休日（勤務・休日振替からの自動登録専用。公休・振休とは別の区分）
 
 export type CalendarView = 'month' | 'week' | 'day'
 
@@ -195,7 +197,7 @@ export interface ShiftChangeDetail {
 
 export interface ShiftChangeRecord {
   id: string
-  facilityId: string
+  facilityId: string   // 施設なし（勤務・休日振替の記録だけ）は ''
   facilityName: string
   targetDate: string   // YYYY-MM-DD
   reason: string
@@ -205,7 +207,89 @@ export interface ShiftChangeRecord {
   createdAt: string
   updatedAt: string
   relatedChangeGroupId: string | null
+  // 勤務・休日振替の記録だけが持つ（通常のシフト変更は null）。編集・取消は振替の画面から2日分まとめて行う
+  swapId: string | null
+  swapRole: ShiftSwapRole | null
 }
+
+// ── 勤務・休日振替（振替出勤・振替休日） ──────────────────────────────
+// 休日と勤務日をあらかじめ入れ替えるもの。既存の「休日出勤」「振休」とは別の区分で、通常のシフト変更では選べない。
+// 割増賃金の要否などはこのアプリでは判定しない
+export const SHIFT_SWAP_TYPES = ['振替出勤', '振替休日'] as const
+export type ShiftSwapType = typeof SHIFT_SWAP_TYPES[number]
+export type ShiftSwapRole = 'work' | 'off'   // work = 振替出勤日 / off = 振替休日
+export const SHIFT_SWAP_ROLE_TYPES: Record<ShiftSwapRole, ShiftSwapType> = { work: '振替出勤', off: '振替休日' }
+
+export interface ShiftSwapDay {
+  recordId: string
+  date: string               // YYYY-MM-DD
+  facilityId: string | null  // null = 施設勤務なし
+  facilityName: string
+  originalShift: string      // 元の状態（例: 休み / フリー（施設勤務なし））
+  changeDetail: string       // 変更内容（例: 休み → MT出席（振替出勤））
+}
+
+export interface ShiftSwap {
+  id: string
+  person: MeetingAssigneeRef        // 対象者（G長・主任 or スタッフのマスタID）。名前では照合しない
+  personName: string                // 保存時点の名前（明細の employee_name）
+  showOnCalendar: boolean           // 本人のカレンダーに表示するか（対象者の識別とは別）
+  workContent: string               // 振替出勤日の勤務内容（自由入力。例: MT出席・本部業務・研修）
+  reason: string
+  handledBy: string
+  memo: string
+  work: ShiftSwapDay
+  off: ShiftSwapDay
+  hiddenScheduleIds: string[]       // 振替出勤日に非表示にした本人の公休
+  createdAt: string
+  updatedAt: string                 // DB の値そのまま（マイクロ秒まで）。Date に変換せず、そのまま編集・取消時に送り返す
+}
+
+export type ShiftSwapDayInput = {
+  date: string
+  facilityId: string | null
+  originalShift: string
+  changeDetail: string
+}
+
+export type ShiftSwapInput = {
+  id: string                        // 新規は画面側で発行（再送しても二重にならない）
+  mode: 'create' | 'update'
+  expectedUpdatedAt?: string        // 編集時は必須（読み込んだときの updatedAt そのまま）
+  person: MeetingAssigneeRef
+  showOnCalendar: boolean
+  workContent: string
+  reason: string
+  handledBy: string
+  memo: string
+  work: ShiftSwapDayInput
+  off: ShiftSwapDayInput
+  hiddenScheduleIds: string[]
+}
+
+// ── 勤務・休日振替の操作（登録・変更・取消の1回ごと）と、本部への通知の状態 ──
+// 通知の文面はサーバーが DB の操作の記録から作る。画面は操作IDと状態だけを扱う
+export type ShiftSwapAction = 'create' | 'update' | 'cancel'
+export type ShiftSwapNotifyStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'unknown' | 'needs_check'
+
+export interface ShiftSwapOperation {
+  id: string                       // 操作ID
+  swapId: string
+  action: ShiftSwapAction
+  personName: string
+  workDate: string
+  offDate: string
+  createdAt: string
+  notifyStatus: ShiftSwapNotifyStatus
+  notifyAttempts: number
+  notifyClaimedAt: string | null
+  notifySentAt: string | null
+  notifyLastError: string | null
+  notifyManuallyConfirmed: boolean
+}
+
+// 通知 API の応答（error は API に届かなかった・失敗した場合）
+export type ShiftSwapNotifyResult = ShiftSwapNotifyStatus | 'error'
 
 export type CreateShiftChangeDetailInput = {
   employeeName: string

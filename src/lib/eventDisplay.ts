@@ -1,5 +1,5 @@
 import type { CalendarView, ScheduleEvent } from '@/lib/types'
-import { getEventTypeConfig, isHalfDayType } from '@/constants/eventTypes'
+import { getEventTypeConfig, isHalfDayType, isShiftSwapEventType } from '@/constants/eventTypes'
 import { shiftChangeTypeFromTitle } from '@/lib/shiftChangeCalendar'
 
 /**
@@ -16,7 +16,8 @@ export function formatEventDisplay(event: ScheduleEvent, viewType: CalendarView)
   const typeLabel = isShiftChange
     ? shiftChangeTypeFromTitle(event.title)
     : getEventTypeConfig(event.type).label
-  const typeTag = `${isShiftChange ? '⇆' : ''}【${typeLabel}】`
+  // 勤務・休日振替の予定（振替出勤・振替休日）も自動登録なので「⇆」を付ける
+  const typeTag = `${isShiftChange || isShiftSwapEventType(event.type) ? '⇆' : ''}【${typeLabel}】`
 
   if (event.isAllDay) {
     return `${typeTag}${event.groupLeaderName}`

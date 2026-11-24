@@ -119,7 +119,7 @@ function MigrationBanner({
 export default function HomePage() {
   const { currentDate, view, goToToday, navigateNext, navigatePrev, changeView, setDate } = useCalendar()
   const {
-    events, loading: eventsLoading, error: eventsError,
+    events, hiddenScheduleIds, loading: eventsLoading, error: eventsError,
     addEvent, addEvents, updateEvent, deleteEvent, reload: reloadEvents,
   } = useEvents()
   const {
@@ -389,16 +389,19 @@ export default function HomePage() {
     return selectedPersonId === ALL_PERSON_ID || event.staffMemberId === selectedPersonId
   }, [selectedRole, selectedPersonId, staffRoleById])
 
-  const filteredEvents = useMemo(() => events.filter(event => {
+  // 勤務・休日振替で非表示にした公休を除いた予定（カレンダー表示・件数・絞り込みはこちらを使う）
+  const visibleEvents = useMemo(() => events.filter(e => !hiddenScheduleIds.has(e.id)), [events, hiddenScheduleIds])
+
+  const filteredEvents = useMemo(() => visibleEvents.filter(event => {
     const personMatch = matchesPerson(event)
     const typeMatch = filters.types.length === 0 || filters.types.includes(event.type)
     const facilityMatch = filters.facilities.length === 0 || filters.facilities.includes(event.facilityName)
     return personMatch && typeMatch && facilityMatch
-  }), [events, matchesPerson, filters])
+  }), [visibleEvents, matchesPerson, filters])
 
   const leaderBaseCount = useMemo(
-    () => events.filter(matchesPerson).length,
-    [events, matchesPerson]
+    () => visibleEvents.filter(matchesPerson).length,
+    [visibleEvents, matchesPerson]
   )
 
   // ── モーダルヘルパー ─────────────────────────────────────────────
@@ -517,7 +520,7 @@ export default function HomePage() {
           </p>
         </div>
         <div className="text-xs text-blue-200 text-right">
-          <p>全{events.length}件</p>
+          <p>全{visibleEvents.length}件</p>
           {(selectedRole !== 'all' || selectedPersonId !== ALL_PERSON_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
             <p className="text-blue-300">表示{filteredEvents.length}件</p>
           )}
@@ -688,6 +691,8 @@ export default function HomePage() {
         openRecordId={shiftChangeOpenRecordId}
         onLoadRecord={loadShiftChangeRecord}
         onOpenRecordHandled={() => setShiftChangeOpenRecordId(null)}
+        events={events}
+        onSwapChanged={() => reloadEvents({ silent: true })}
       />
 
       {/* シフト変更から自動登録した予定（表示専用） */}

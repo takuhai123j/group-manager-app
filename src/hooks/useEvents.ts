@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { scheduleService } from '@/services/scheduleService'
+import { shiftSwapService, type HiddenScheduleRule } from '@/services/shiftSwapService'
 import type { ScheduleEvent, CreateEventInput, UpdateEventInput } from '@/lib/types'
 
 export function useEvents() {
   const [events, setEvents] = useState<ScheduleEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // 勤務・休日振替で非表示にした公休（予定は消さず、カレンダーの表示だけ外す）
+  const [hiddenRules, setHiddenRules] = useState<HiddenScheduleRule[]>([])
 
   // silent: true の場合は loading を立てずに再取得する
   // （ページ全体がローディング画面に切り替わり、開いているモーダルが閉じてしまうのを防ぐため。
@@ -17,8 +20,13 @@ export function useEvents() {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await scheduleService.getAll()
+      const [data, rules] = await Promise.all([
+        scheduleService.getAll(),
+        // 非表示の情報が読めなくても、カレンダーは表示する（公休がそのまま表示されるだけ）
+        shiftSwapService.getHiddenScheduleRules().catch(() => [] as HiddenScheduleRule[]),
+      ])
       setEvents(data)
+      setHiddenRules(rules)
     } catch {
       setError('スケジュールの読み込みに失敗しました')
     } finally {
@@ -63,8 +71,20 @@ export function useEvents() {
       .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || (a.startTime ?? '').localeCompare(b.startTime ?? ''))
   }, [events])
 
+  // 非表示にする予定のID。紐付けた後に公休が別の日・別の人へ変えられた場合は隠さない
+  const hiddenScheduleIds = useMemo(() => {
+    const byId = new Map(events.map(e => [e.id, e]))
+    const ids = new Set<string>()
+    for (const r of hiddenRules) {
+      const e = byId.get(r.scheduleId)
+      if (e && e.type === 'kyukyu' && !e.shiftChangeRecordId && e.date === r.workDate && (e.staffMemberId ?? e.groupLeaderId) === r.personKey) ids.add(e.id)
+    }
+    return ids
+  }, [events, hiddenRules])
+
   return {
     events,
+    hiddenScheduleIds,
     loading,
     error,
     addEvent,

@@ -147,6 +147,26 @@ export const EVENT_TYPES: EventTypeConfig[] = [
     dotColor: 'bg-indigo-500',
     solidBg: '#6366F1',
   },
+  // 勤務・休日振替からの自動登録専用（手動の予定では選べない）。終日の「勤務区分」として表示し、MT などの時刻付きの予定と分ける。
+  // 休日出勤（amber）・公休（slate）・振休とは別の色にして混同しないようにする
+  {
+    value: 'furikae_work',
+    label: '振替出勤',
+    bgColor: 'bg-green-50',
+    textColor: 'text-green-900',
+    borderColor: 'border-green-600',
+    dotColor: 'bg-green-600',
+    solidBg: '#16A34A',
+  },
+  {
+    value: 'furikae_off',
+    label: '振替休日',
+    bgColor: 'bg-pink-50',
+    textColor: 'text-pink-900',
+    borderColor: 'border-pink-500',
+    dotColor: 'bg-pink-500',
+    solidBg: '#EC4899',
+  },
   {
     value: 'other',
     label: 'その他',
@@ -159,7 +179,13 @@ export const EVENT_TYPES: EventTypeConfig[] = [
 ]
 
 /** 予定の登録・編集画面で選べる種別（自動登録専用の種別を除く） */
-export const MANUAL_EVENT_TYPES: EventTypeConfig[] = EVENT_TYPES.filter(t => t.value !== 'shift_change')
+export const AUTO_ONLY_EVENT_TYPES: EventType[] = ['shift_change', 'furikae_work', 'furikae_off']
+export const MANUAL_EVENT_TYPES: EventTypeConfig[] = EVENT_TYPES.filter(t => !AUTO_ONLY_EVENT_TYPES.includes(t.value))
+
+/** 勤務・休日振替から自動登録した予定の種別か */
+export function isShiftSwapEventType(type: EventType): boolean {
+  return type === 'furikae_work' || type === 'furikae_off'
+}
 
 export const getEventTypeConfig = (type: EventType): EventTypeConfig => {
   return EVENT_TYPES.find(t => t.value === type) ?? EVENT_TYPES[EVENT_TYPES.length - 1]

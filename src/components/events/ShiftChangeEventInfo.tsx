@@ -1,7 +1,7 @@
 'use client'
 
 import { X, Lock, ArrowLeftRight } from 'lucide-react'
-import { getEventTypeConfig } from '@/constants/eventTypes'
+import { getEventTypeConfig, isShiftSwapEventType } from '@/constants/eventTypes'
 import { shiftChangeTypeFromTitle, formatCalendarTime } from '@/lib/shiftChangeCalendar'
 import { cn } from '@/lib/utils'
 import type { ScheduleEvent } from '@/lib/types'
@@ -22,15 +22,18 @@ function formatDate(dateStr: string): string {
 
 export function ShiftChangeEventInfo({ event, onClose, onOpenShiftChange }: Props) {
   if (!event || !event.shiftChangeRecordId) return null
-  const config = getEventTypeConfig('shift_change')
+  // 勤務・休日振替（振替出勤・振替休日）は種別をそのまま見出しにする（休日出勤・振休とは別の区分）
+  const isSwap = isShiftSwapEventType(event.type)
+  const config = getEventTypeConfig(isSwap ? event.type : 'shift_change')
   const recordId = event.shiftChangeRecordId
+  const kind = isSwap ? '勤務・休日振替' : 'シフト変更'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90dvh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
-          <h2 className="text-base font-semibold text-gray-800">シフト変更の予定</h2>
+          <h2 className="text-base font-semibold text-gray-800">{kind}の予定</h2>
           <button onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100" aria-label="閉じる">
             <X size={18} />
           </button>
@@ -39,7 +42,7 @@ export function ShiftChangeEventInfo({ event, onClose, onOpenShiftChange }: Prop
         <div className="overflow-y-auto px-4 py-4 space-y-3 text-sm">
           <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold', config.bgColor, config.textColor, config.borderColor)}>
             <span className={cn('w-2 h-2 rounded-full', config.dotColor)} />
-            {config.label}：{shiftChangeTypeFromTitle(event.title)}
+            {isSwap ? event.title : `${config.label}：${shiftChangeTypeFromTitle(event.title)}`}
           </span>
           <dl className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-1.5 text-gray-700">
             <dt className="text-gray-500">担当</dt><dd>{event.groupLeaderName}</dd>
@@ -52,7 +55,9 @@ export function ShiftChangeEventInfo({ event, onClose, onOpenShiftChange }: Prop
           )}
           <p className="flex items-start gap-1.5 text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
             <Lock size={13} className="flex-shrink-0 mt-0.5" />
-            シフト変更の記録から自動で登録された予定です。変更・削除はシフト変更の記録から行ってください（ここでは編集できません）。
+            {isSwap
+              ? '勤務・休日振替から自動で登録された予定です。変更・取消は振替の画面から2日分まとめて行ってください（ここでは編集できません）。'
+              : 'シフト変更の記録から自動で登録された予定です。変更・削除はシフト変更の記録から行ってください（ここでは編集できません）。'}
           </p>
         </div>
 
@@ -64,7 +69,7 @@ export function ShiftChangeEventInfo({ event, onClose, onOpenShiftChange }: Prop
             onClick={() => onOpenShiftChange(recordId)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
           >
-            <ArrowLeftRight size={14} />シフト変更の記録を開く
+            <ArrowLeftRight size={14} />{isSwap ? '振替を開く' : 'シフト変更の記録を開く'}
           </button>
         </div>
       </div>

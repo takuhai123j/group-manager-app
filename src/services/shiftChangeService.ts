@@ -135,7 +135,8 @@ function toRecord(row: ParentRow): ShiftChangeRecord {
     .map(toDetail)
   return {
     id: row.id,
-    facilityId: row.facility_id,
+    // 施設なしは勤務・休日振替の記録だけ（'' で表す）
+    facilityId: row.facility_id ?? '',
     facilityName: row.facilities?.name ?? '',
     targetDate: row.target_date,
     reason: row.reason,
@@ -145,6 +146,8 @@ function toRecord(row: ParentRow): ShiftChangeRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     relatedChangeGroupId: row.related_change_group_id ?? null,
+    swapId: row.swap_id ?? null,
+    swapRole: row.swap_role ?? null,
   }
 }
 
@@ -186,6 +189,25 @@ export const shiftChangeService = {
       rows = await fetchAllPages<ParentRow>((from, to) => records(from, to, q => q))
     }
 
+    // 勤務・休日振替は2日分で1件として表示するため、絞り込み（施設・対象日など）で片方だけ取れた場合は相手の日も取り足す
+    const haveIds = new Set(rows.map(r => r.id))
+    const partialSwapIds = Array.from(new Set(
+      rows.filter(r => r.swap_id).map(r => r.swap_id as string)
+        .filter(sid => rows.filter(r => r.swap_id === sid).length < 2),
+    ))
+    for (let i = 0; i < partialSwapIds.length; i += 100) {
+      const chunk = partialSwapIds.slice(i, i + 100)
+      const { data, error } = await supabase
+        .from('shift_change_records')
+        .select('*, facilities(name), shift_change_details(*)')
+        .in('swap_id', chunk)
+      if (error) throw error
+      for (const row of (data ?? []) as ParentRow[]) {
+        if (!haveIds.has(row.id)) { rows.push(row); haveIds.add(row.id) }
+      }
+    }
+    if (partialSwapIds.length > 0) rows.sort(compareRecordRows)
+
     let list = rows.map(row => toRecord(row))
 
     // 明細側絞り込み（client-side）
@@ -201,6 +223,13 @@ export const shiftChangeService = {
     }
     if (filters?.supportFacilityId) {
       list = list.filter(r => r.details.some(d => d.supportFromFacilityId === filters.supportFacilityId))
+    }
+
+    // 勤務・休日振替は、どちらかの日が条件に合えば2日分とも残す（一覧では1件として表示する）
+    const matchedSwapIds = new Set(list.filter(r => r.swapId).map(r => r.swapId as string))
+    if (matchedSwapIds.size > 0) {
+      const kept = new Set(list.map(r => r.id))
+      list = rows.map(row => toRecord(row)).filter(r => kept.has(r.id) || (r.swapId !== null && matchedSwapIds.has(r.swapId)))
     }
 
     return list

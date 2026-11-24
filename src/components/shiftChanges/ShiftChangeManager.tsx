@@ -1,17 +1,32 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck, Link2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck, Link2, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { SHIFT_CHANGE_TYPES } from '@/lib/types'
+import { SHIFT_CHANGE_TYPES, SHIFT_SWAP_TYPES } from '@/lib/types'
 import { ShiftChangeFormModal } from './ShiftChangeFormModal'
+import { ShiftSwapFormModal } from './ShiftSwapFormModal'
+import { formatMonthDayWeek } from '@/lib/shiftSwapMail'
+import { shiftSwapService } from '@/services/shiftSwapService'
+import type { ShiftSwapNotifyStatus, ShiftSwapOperation } from '@/lib/types'
+
+// 勤務・休日振替の本部への通知の状態（一覧の表示用）
+const NOTIFY_LABELS: Record<ShiftSwapNotifyStatus, { label: string; cls: string }> = {
+  pending: { label: '通知：未送信', cls: 'bg-amber-100 text-amber-800 border-amber-300' },
+  sending: { label: '通知：送信中', cls: 'bg-sky-100 text-sky-800 border-sky-300' },
+  sent: { label: '通知：送信済み', cls: 'bg-gray-50 text-gray-600 border-gray-300' },
+  failed: { label: '通知：送信失敗', cls: 'bg-red-100 text-red-800 border-red-300' },
+  unknown: { label: '通知：結果不明', cls: 'bg-amber-100 text-amber-800 border-amber-300' },
+  needs_check: { label: '通知：要確認', cls: 'bg-red-100 text-red-800 border-red-300' },
+}
+const ACTION_LABELS: Record<ShiftSwapOperation['action'], string> = { create: '登録', update: '変更', cancel: '取消' }
 import { HelpButton } from '@/components/help/HelpButton'
 import { HelpModal } from '@/components/help/HelpModal'
 import { HELP_CONTENT } from '@/constants/helpContent'
 import { formatCalendarTime, targetKey } from '@/lib/shiftChangeCalendar'
 import { chainSteps, chainSummary } from '@/lib/shiftChangeChain'
 import type {
-  ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters, GroupManager, StaffMember,
+  ShiftChangeRecord, CreateShiftChangeInput, Facility, ShiftChangeFilters, GroupManager, StaffMember, ScheduleEvent,
 } from '@/lib/types'
 
 interface Props {
@@ -34,6 +49,9 @@ interface Props {
   openRecordId?: string | null
   onLoadRecord?: (id: string) => Promise<ShiftChangeRecord>
   onOpenRecordHandled?: () => void
+  // 勤務・休日振替の画面で使うカレンダーの全予定（公休・MT・予定の重なりの確認）と、保存・取消後の再読み込み
+  events: ScheduleEvent[]
+  onSwapChanged: () => Promise<void> | void
 }
 
 const CHANGE_TYPE_COLORS: Record<string, string> = {
@@ -45,6 +63,9 @@ const CHANGE_TYPE_COLORS: Record<string, string> = {
   休日出勤: 'bg-amber-100 text-amber-800',
   振休: 'bg-indigo-100 text-indigo-700',
   その他: 'bg-gray-100 text-gray-700',
+  // 勤務・休日振替（休日出勤・振休とは別の区分・別の色）
+  振替出勤: 'bg-green-100 text-green-800',
+  振替休日: 'bg-pink-100 text-pink-800',
   // 旧データ互換
   交代: 'bg-blue-100 text-blue-700',
   追加出勤: 'bg-green-100 text-green-700',
@@ -61,7 +82,7 @@ export function ShiftChangeManager({
   isOpen, records, loading, facilities, managers, staffMembers,
   onClose, onAdd, onAddBatch, onUpdate, onDelete, onReload,
   onLoadRelatedGroup, onLinkCompensatoryLeave,
-  openRecordId, onLoadRecord, onOpenRecordHandled,
+  openRecordId, onLoadRecord, onOpenRecordHandled, events, onSwapChanged,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ShiftChangeRecord | null>(null)
@@ -76,6 +97,35 @@ export function ShiftChangeManager({
   const [fExternalOnly, setFExternalOnly] = useState(false)
   const [fSupportFacilityId, setFSupportFacilityId] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
+  // 勤務・休日振替の画面（新規は swapEditingId = null）
+  const [swapFormOpen, setSwapFormOpen] = useState(false)
+  const [swapEditingId, setSwapEditingId] = useState<string | null>(null)
+  // 本部への通知が済んでいない振替の操作（取消済みの振替の分も含む）と、振替ごとの最新の操作
+  const [unsentOps, setUnsentOps] = useState<ShiftSwapOperation[]>([])
+  const [latestOps, setLatestOps] = useState<Map<string, ShiftSwapOperation>>(new Map())
+  const [notifyBusy, setNotifyBusy] = useState<string | null>(null)
+  const [notifyError, setNotifyError] = useState<string | null>(null)
+  const swapIdsKey = Array.from(new Set(records.filter(r => r.swapId).map(r => r.swapId as string))).sort().join(',')
+  const loadOps = useCallback(async () => {
+    try {
+      const [unsent, latest] = await Promise.all([
+        shiftSwapService.getUnsentOperations(),
+        shiftSwapService.getLatestOperations(swapIdsKey ? swapIdsKey.split(',') : []),
+      ])
+      setUnsentOps(unsent); setLatestOps(latest)
+    } catch {
+      // 通知の状態が読めなくても一覧は表示する
+      setUnsentOps([]); setLatestOps(new Map())
+    }
+  }, [swapIdsKey])
+  useEffect(() => { if (isOpen) loadOps() }, [isOpen, loadOps])
+  const handleRetryNotify = async (op: ShiftSwapOperation) => {
+    setNotifyBusy(op.id); setNotifyError(null)
+    const st = await shiftSwapService.notify(op.id)
+    if (st === 'error') setNotifyError('通知を送れませんでした。時間をおいてもう一度お試しください')
+    await loadOps()
+    setNotifyBusy(null)
+  }
 
   useEffect(() => {
     if (isOpen) onReload()
@@ -91,7 +141,12 @@ export function ShiftChangeManager({
     const found = records.find(r => r.id === openRecordId)
     const load = found ? Promise.resolve(found) : onLoadRecord?.(openRecordId) ?? Promise.reject(new Error('no loader'))
     load
-      .then(r => { if (!cancelled) { setEditing(r); setFormOpen(true) } })
+      .then(r => {
+        if (cancelled) return
+        // 勤務・休日振替の記録は、振替の画面で2日分まとめて開く
+        if (r.swapId) { setSwapEditingId(r.swapId); setSwapFormOpen(true) }
+        else { setEditing(r); setFormOpen(true) }
+      })
       .catch(() => { if (!cancelled) setOpenError('シフト変更の記録を開けませんでした（削除された可能性があります）') })
       .finally(() => { if (!cancelled) onOpenRecordHandled?.() })
     return () => { cancelled = true }
@@ -122,7 +177,16 @@ export function ShiftChangeManager({
   }
 
   const openAdd = () => { setEditing(null); setFormOpen(true) }
-  const openEdit = (r: ShiftChangeRecord) => { setEditing(r); setFormOpen(true) }
+  const openEdit = (r: ShiftChangeRecord) => {
+    if (r.swapId) { setSwapEditingId(r.swapId); setSwapFormOpen(true); return }
+    setEditing(r); setFormOpen(true)
+  }
+  const openAddSwap = () => { setSwapEditingId(null); setSwapFormOpen(true) }
+  const handleSwapChanged = async () => {
+    await loadOps()
+    await onSwapChanged()
+    await onReload(hasFilter ? buildFilters() : undefined)
+  }
   const handleSave = async (input: CreateShiftChangeInput): Promise<ShiftChangeRecord> => {
     if (editing) return await onUpdate(editing.id, input)
     else return await onAdd(input)
@@ -141,9 +205,9 @@ export function ShiftChangeManager({
       <div className="fixed inset-0 z-40 flex flex-col bg-white">
 
         {/* ヘッダー */}
-        <div className="bg-blue-700 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
-          <h2 className="text-base font-semibold">シフト変更記録</h2>
-          <div className="flex items-center gap-2">
+        <div className="bg-blue-700 text-white px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0">
+          <h2 className="min-w-0 truncate whitespace-nowrap text-sm sm:text-base font-semibold">シフト変更記録</h2>
+          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setFilterOpen(p => !p)}
               className={cn(
@@ -156,6 +220,12 @@ export function ShiftChangeManager({
               <span className="hidden sm:inline">絞り込み</span>
               {hasFilter && <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />}
               {filterOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            <button onClick={openAddSwap} data-testid="open-swap-form"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg border border-white/70 text-white text-sm font-medium whitespace-nowrap hover:bg-blue-600"
+              title="勤務・休日振替（振替出勤・振替休日）を登録">
+              <ArrowLeftRight size={15} />
+              <span>振替</span>
             </button>
             <button onClick={openAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-blue-700 text-sm font-medium hover:bg-blue-50">
@@ -207,6 +277,9 @@ export function ShiftChangeManager({
                   className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
                   <option value="">すべて</option>
                   {SHIFT_CHANGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  <optgroup label="勤務・休日振替">
+                    {SHIFT_SWAP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
                 </select>
               </div>
               <div className="sm:col-span-2">
@@ -243,6 +316,38 @@ export function ShiftChangeManager({
           </div>
         )}
 
+        {/* 本部への通知が済んでいない勤務・休日振替（画面を閉じても・再読み込みしても、ここから確認・再送できる） */}
+        {unsentOps.length > 0 && (
+          <div className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-2" data-testid="swap-unsent-notify">
+            <p className="text-sm font-semibold text-amber-900">本部への通知（勤務・休日振替）：未完了 {unsentOps.length}件</p>
+            {unsentOps.map(op => {
+              const meta = NOTIFY_LABELS[op.notifyStatus]
+              const stale = op.notifyStatus === 'sending' && (!op.notifyClaimedAt || Date.now() - Date.parse(op.notifyClaimedAt) > 5 * 60 * 1000)
+              const canRetry = op.notifyStatus === 'pending' || op.notifyStatus === 'failed' || op.notifyStatus === 'unknown' || stale
+              return (
+                <div key={op.id} className="flex flex-wrap items-center gap-2 text-xs text-amber-900" data-testid="swap-unsent-item">
+                  <span className={cn('px-1.5 py-0.5 rounded-md border font-medium', meta.cls)}>{meta.label}</span>
+                  <span className="font-medium">{ACTION_LABELS[op.action]}</span>
+                  <span>{op.personName} 振替出勤 {formatMonthDayWeek(op.workDate)}・振替休日 {formatMonthDayWeek(op.offDate)}</span>
+                  {op.notifyLastError && <span className="text-amber-700">（{op.notifyLastError}）</span>}
+                  {canRetry && (
+                    <button onClick={() => handleRetryNotify(op)} disabled={notifyBusy === op.id} data-testid="swap-retry-notify"
+                      className="px-2 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60">
+                      {notifyBusy === op.id ? '送信中…' : '通知を送る'}
+                    </button>
+                  )}
+                  {op.notifyStatus === 'needs_check' && (
+                    <span className="w-full text-red-700" data-testid="swap-needs-check-note">
+                      送れたかどうか分からないまま時間が経ったため、自動では送り直しません。本部管理者が受信を確認して処理します（この画面からは変更できません）。
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+            {notifyError && <p className="text-xs text-red-700" role="alert">{notifyError}</p>}
+          </div>
+        )}
+
         {openError && (
           <p role="alert" className="mx-4 mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{openError}</p>
         )}
@@ -263,7 +368,53 @@ export function ShiftChangeManager({
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {records.map(r => (
+              {records.map(r => {
+                if (r.swapId) {
+                  // 勤務・休日振替は2日分で1件。最初に出てきた日のところに1枚だけ表示する
+                  if (records.find(x => x.swapId === r.swapId)?.id !== r.id) return null
+                  const pair = records.filter(x => x.swapId === r.swapId)
+                  const work = pair.find(x => x.swapRole === 'work')
+                  const off = pair.find(x => x.swapRole === 'off')
+                  const name = (work ?? off)?.details[0]?.employeeName ?? ''
+                  const dayLine = (x: ShiftChangeRecord | undefined, label: string, cls: string) => x && (
+                    <div className="flex items-start gap-2 text-sm flex-wrap">
+                      <span className={cn('flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium', cls)}>{label}</span>
+                      <span className="text-gray-800 font-medium flex-shrink-0">{formatMonthDayWeek(x.targetDate)}</span>
+                      <span className="text-gray-600 text-xs leading-relaxed">{x.details[0]?.changeDetail}</span>
+                      <span className="text-gray-500 text-xs flex-shrink-0">施設：{x.facilityName || 'なし'}</span>
+                    </div>
+                  )
+                  return (
+                    <button key={`swap-${r.swapId}`} onClick={() => openEdit(r)} data-testid="swap-card"
+                      className="w-full text-left px-4 py-4 hover:bg-green-50 transition-colors">
+                      <div className="flex items-baseline gap-2 mb-1 flex-wrap">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-semibold bg-green-50 text-green-900 border border-green-600">
+                          <ArrowLeftRight size={11} />勤務・休日振替
+                        </span>
+                        <span className="text-sm font-semibold text-gray-800">{name}</span>
+                        {latestOps.get(r.swapId) && (() => {
+                          const op = latestOps.get(r.swapId as string) as ShiftSwapOperation
+                          const meta = NOTIFY_LABELS[op.notifyStatus]
+                          return (
+                            <span className={cn('px-1.5 py-0.5 rounded-md border text-xs', meta.cls)} data-testid="swap-card-notify">
+                              {ACTION_LABELS[op.action]}の{meta.label}
+                            </span>
+                          )
+                        })()}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
+                        <span>理由：{r.reason}</span>
+                        <span>対応者：{r.handledBy}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {dayLine(work, '振替出勤', CHANGE_TYPE_COLORS['振替出勤'])}
+                        {dayLine(off, '振替休日', CHANGE_TYPE_COLORS['振替休日'])}
+                      </div>
+                      {r.memo && <p className="mt-1.5 text-xs text-gray-400 line-clamp-1">メモ：{r.memo}</p>}
+                    </button>
+                  )
+                }
+                return (
                 <button key={r.id} onClick={() => openEdit(r)}
                   className="w-full text-left px-4 py-4 hover:bg-blue-50 transition-colors">
 
@@ -332,13 +483,15 @@ export function ShiftChangeManager({
                     <p className="mt-1.5 text-xs text-gray-400 line-clamp-1">メモ：{r.memo}</p>
                   )}
                 </button>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
 
         <div className="border-t px-4 py-2 flex-shrink-0 bg-gray-50">
-          <p className="text-xs text-gray-500">{records.length}件</p>
+          {/* 勤務・休日振替は2日分で1件と数える */}
+          <p className="text-xs text-gray-500">{records.filter(r => !r.swapId).length + new Set(records.filter(r => r.swapId).map(r => r.swapId)).size}件</p>
         </div>
       </div>
 
@@ -355,6 +508,17 @@ export function ShiftChangeManager({
         onLoadRelatedGroup={onLoadRelatedGroup}
         onCreateLinkedRecord={onAdd}
         onLinkCompensatoryLeave={onLinkCompensatoryLeave}
+      />
+
+      <ShiftSwapFormModal
+        isOpen={swapFormOpen}
+        swapId={swapEditingId}
+        facilities={facilities}
+        managers={managers}
+        staffMembers={staffMembers}
+        events={events}
+        onClose={() => setSwapFormOpen(false)}
+        onChanged={handleSwapChanged}
       />
 
       <HelpModal
