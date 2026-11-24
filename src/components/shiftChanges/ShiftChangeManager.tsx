@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Plus, Filter, ChevronDown, ChevronUp, Search, CalendarCheck, Link2, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHIFT_CHANGE_TYPES, SHIFT_SWAP_TYPES } from '@/lib/types'
@@ -106,19 +106,31 @@ export function ShiftChangeManager({
   const [notifyBusy, setNotifyBusy] = useState<string | null>(null)
   const [notifyError, setNotifyError] = useState<string | null>(null)
   const swapIdsKey = Array.from(new Set(records.filter(r => r.swapId).map(r => r.swapId as string))).sort().join(',')
+  // いま表示している一覧の振替ID（読み込みのたびに最新を参照する。保存処理などの古い関数から呼ばれても古い一覧を使わない）
+  const swapIdsRef = useRef(swapIdsKey)
+  swapIdsRef.current = swapIdsKey
+  // 読み込みの順番。後から始めた読み込みの結果だけを反映し、先に始めた（古い一覧での）結果で上書きしない
+  const opsSeqRef = useRef(0)
   const loadOps = useCallback(async () => {
+    const seq = ++opsSeqRef.current
+    const key = swapIdsRef.current
     try {
       const [unsent, latest] = await Promise.all([
         shiftSwapService.getUnsentOperations(),
-        shiftSwapService.getLatestOperations(swapIdsKey ? swapIdsKey.split(',') : []),
+        shiftSwapService.getLatestOperations(key ? key.split(',') : []),
       ])
+      if (seq !== opsSeqRef.current) return
       setUnsentOps(unsent); setLatestOps(latest)
     } catch {
+      if (seq !== opsSeqRef.current) return
       // 通知の状態が読めなくても一覧は表示する
       setUnsentOps([]); setLatestOps(new Map())
     }
-  }, [swapIdsKey])
-  useEffect(() => { if (isOpen) loadOps() }, [isOpen, loadOps])
+  }, [])
+  // 振替の保存・取消・通知のあとに通知状態を読み直す合図（一覧の読み直しが画面に反映された後で読む）
+  const [opsReloadTick, setOpsReloadTick] = useState(0)
+  // 開いたとき・一覧の振替が変わったとき・合図があったときに1回読む
+  useEffect(() => { if (isOpen) loadOps() }, [isOpen, swapIdsKey, opsReloadTick, loadOps])
   const handleRetryNotify = async (op: ShiftSwapOperation) => {
     setNotifyBusy(op.id); setNotifyError(null)
     const st = await shiftSwapService.notify(op.id)
@@ -183,9 +195,10 @@ export function ShiftChangeManager({
   }
   const openAddSwap = () => { setSwapEditingId(null); setSwapFormOpen(true) }
   const handleSwapChanged = async () => {
-    await loadOps()
     await onSwapChanged()
     await onReload(hasFilter ? buildFilters() : undefined)
+    // 通知状態は、読み直した一覧（新しく登録した振替を含む）で読む。ここで直接読むと古い一覧のまま読んでしまうため合図だけ送る
+    setOpsReloadTick(t => t + 1)
   }
   const handleSave = async (input: CreateShiftChangeInput): Promise<ShiftChangeRecord> => {
     if (editing) return await onUpdate(editing.id, input)

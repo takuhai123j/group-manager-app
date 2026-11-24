@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { buildCalendarCandidates, targetKey, parseTargetKey, sameTarget } from '@/lib/shiftChangeCalendar'
 import { shiftSwapService, shiftSwapErrorMessage, shiftSwapErrorCode } from '@/services/shiftSwapService'
 import { formatFullDateWeek, formatMonthDayWeek } from '@/lib/shiftSwapMail'
-import { getEventTypeConfig } from '@/constants/eventTypes'
+import { getEventTypeConfig, isShiftSwapEventType } from '@/constants/eventTypes'
 import type {
   Facility, GroupManager, MeetingAssigneeRef, ScheduleEvent, ShiftSwap, ShiftSwapInput, ShiftSwapNotifyResult, StaffMember,
 } from '@/lib/types'
@@ -34,6 +34,61 @@ const DEFAULT_OFF_ORIGINAL = 'フリー（施設勤務なし）'
 const personKeyOf = (e: ScheduleEvent) => e.staffMemberId ?? (e.groupLeaderId || null)
 const isManualKyukyu = (e: ScheduleEvent) => e.type === 'kyukyu' && !e.shiftChangeRecordId
 const timeText = (e: ScheduleEvent) => (e.isAllDay ? '終日' : `${e.startTime}〜${e.endTime}`)
+
+// ── 予定の重なりの警告（登録は止めない。既存の予定は変更・削除しない） ──
+// 確認できるのは、このアプリのカレンダーに登録されている本人の予定だけ（施設の通常勤務や、担当でないMTへの出席は分からない）
+type WarnKind = 'kyukyu' | 'kyukyu_kept' | 'mt' | 'activity' | 'shift_change' | 'swap' | 'other'
+const WARN_TEXT: Record<WarnKind, string> = {
+  kyukyu: 'この日は既に公休です。振替休日の日付を確認してください',
+  kyukyu_kept: 'この日の公休を非表示にしていません。振替出勤と公休が重なって表示されます',
+  mt: 'この日はMTの予定があります。出席・代理対応を確認してください',
+  activity: 'この日に別の予定があります。予定の変更・取消が必要か確認してください',
+  shift_change: 'この日にシフト変更の記録があります。内容に矛盾がないか確認してください',
+  swap: 'この日には別の勤務・休日振替が登録されています（同じ日に2件は登録できません）',
+  other: 'この日に別の予定があります。内容を確認してください',
+}
+// 巡回・会議などの業務の予定
+const ACTIVITY_TYPES = ['patrol', 'meeting', 'interview', 'job_interview', 'office', 'vacancy', 'trouble', 'holiday_work']
+const WARN_ORDER: WarnKind[] = ['swap', 'kyukyu', 'kyukyu_kept', 'mt', 'shift_change', 'activity', 'other']
+type DayWarning = { kind: WarnKind; events: ScheduleEvent[] }
+
+function warnKindOf(e: ScheduleEvent): WarnKind {
+  if (isShiftSwapEventType(e.type)) return 'swap'
+  if (e.shiftChangeRecordId || e.type === 'shift_change') return 'shift_change'
+  if (e.type === 'kyukyu') return 'kyukyu'
+  if (e.type === 'mt') return 'mt'
+  if (ACTIVITY_TYPES.includes(e.type)) return 'activity'
+  return 'other'
+}
+function groupWarnings(list: { kind: WarnKind; e: ScheduleEvent }[]): DayWarning[] {
+  return WARN_ORDER
+    .map(kind => ({ kind, events: list.filter(x => x.kind === kind).map(x => x.e) }))
+    .filter(w => w.events.length > 0)
+}
+function eventText(e: ScheduleEvent): string {
+  const label = getEventTypeConfig(e.type).label
+  const title = e.title?.trim()
+  return `${label}${title && title !== label ? `「${title}」` : ''} ${timeText(e)}`
+}
+
+// 日付欄のすぐ下・確認画面に出す警告の枠
+function DayWarnings({ warnings, testId }: { warnings: DayWarning[]; testId: string }) {
+  if (warnings.length === 0) return null
+  return (
+    <div className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 space-y-1.5" role="note" data-testid={testId}>
+      {warnings.map(w => (
+        <div key={w.kind} className="text-xs text-amber-900" data-warn-kind={w.kind}>
+          <p className="flex items-start gap-1.5 font-semibold">
+            <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-amber-600" />{WARN_TEXT[w.kind]}
+          </p>
+          <ul className="ml-5 mt-0.5 list-disc space-y-0.5 text-amber-800">
+            {w.events.map(e => <li key={e.id} className="break-words">{eventText(e)}</li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function workDetailText(original: string, content: string): string {
   return `${original.trim() || DEFAULT_WORK_ORIGINAL} → ${content.trim() || '勤務'}（振替出勤）`
@@ -156,28 +211,20 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm(prev => ({ ...prev, [key]: value }))
   const facilityName = (id: string) => facilities.find(f => f.id === id)?.name ?? ''
   const activeFacilities = facilities.filter(f => f.active || f.id === form.workFacilityId || f.id === form.offFacilityId)
-  // ── 警告（保存は止めない） ──
-  const warnings: string[] = []
-  // 振替出勤日の本人のほかの予定（非表示にする公休と、この振替の自動予定は除く）
+  // ── 警告（保存は止めない）。日付ごとに、本人の予定の種類に応じた案内を出す ──
+  const isOwnSwapEvent = (e: ScheduleEvent) => !!(editing && e.shiftChangeRecordId && [editing.work.recordId, editing.off.recordId].includes(e.shiftChangeRecordId))
+  // 振替出勤日: 非表示にする公休とこの振替の自動予定は除く。残した公休は「重なって表示される」案内（カレンダーに出すときだけ）
   const otherOnWorkDay = personId && form.workDate
-    ? events.filter(e => e.date === form.workDate && personKeyOf(e) === personId
-        && !hiddenIds.includes(e.id) && !(editing && e.shiftChangeRecordId && [editing.work.recordId, editing.off.recordId].includes(e.shiftChangeRecordId)))
+    ? events.filter(e => e.date === form.workDate && personKeyOf(e) === personId && !hiddenIds.includes(e.id) && !isOwnSwapEvent(e))
     : []
-  const keptKyukyu = otherOnWorkDay.filter(isManualKyukyu)
-  if (keptKyukyu.length > 0 && form.showOnCalendar) {
-    warnings.push(`${formatMonthDayWeek(form.workDate)}は公休が${keptKyukyu.length}件残ったままです（振替出勤と公休が重なって表示されます）`)
-  }
-  const otherKinds = otherOnWorkDay.filter(e => !isManualKyukyu(e))
-  if (otherKinds.length > 0) {
-    warnings.push(`${formatMonthDayWeek(form.workDate)}には本人のほかの予定があります：${otherKinds.map(e => `${getEventTypeConfig(e.type).label} ${timeText(e)}`).join('、')}`)
-  }
+  const workWarnings = groupWarnings(otherOnWorkDay
+    .filter(e => !isManualKyukyu(e) || form.showOnCalendar)
+    .map(e => ({ kind: isManualKyukyu(e) ? 'kyukyu_kept' as const : warnKindOf(e), e })))
+  // 振替休日: この振替の自動予定は除く
   const otherOnOffDay = personId && form.offDate
-    ? events.filter(e => e.date === form.offDate && personKeyOf(e) === personId
-        && !(editing && e.shiftChangeRecordId && [editing.work.recordId, editing.off.recordId].includes(e.shiftChangeRecordId)))
+    ? events.filter(e => e.date === form.offDate && personKeyOf(e) === personId && !isOwnSwapEvent(e))
     : []
-  if (otherOnOffDay.length > 0) {
-    warnings.push(`振替休日（${formatMonthDayWeek(form.offDate)}）に本人の予定があります：${otherOnOffDay.map(e => `${getEventTypeConfig(e.type).label} ${timeText(e)}`).join('、')}`)
-  }
+  const offWarnings = groupWarnings(otherOnOffDay.map(e => ({ kind: warnKindOf(e), e })))
   // ── 入力の確認 ──
   const validate = (): string | null => {
     if (!person) return '対象者を選んでください'
@@ -309,11 +356,13 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
                 <p className="text-green-900">{input.work.changeDetail}</p>
                 <p className="text-xs text-green-800">施設：{input.work.facilityId ? facilityName(input.work.facilityId) : 'なし（施設勤務なし）'}</p>
               </div>
+              <DayWarnings warnings={workWarnings} testId="swap-confirm-warnings-work" />
               <div className="rounded-lg border border-pink-300 bg-pink-50 px-3 py-2 space-y-0.5">
                 <p className="font-semibold text-pink-900">振替休日 {formatFullDateWeek(input.off.date)}</p>
                 <p className="text-pink-900">{input.off.changeDetail}</p>
                 <p className="text-xs text-pink-800">施設：{input.off.facilityId ? facilityName(input.off.facilityId) : 'なし（施設勤務なし）'}</p>
               </div>
+              <DayWarnings warnings={offWarnings} testId="swap-confirm-warnings-off" />
               {input.showOnCalendar ? (
                 <p className="text-xs text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
                   {selectedPerson?.name}のカレンダーに「振替出勤」「振替休日」を終日で表示します。
@@ -325,13 +374,9 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
                   カレンダーに表示しない設定です。この振替はカレンダーには表示されません（シフト変更記録の一覧と通知メールには残ります）。
                 </p>
               )}
-              {warnings.length > 0 && (
-                <ul className="space-y-1">
-                  {warnings.map((w, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{w}</li>
-                  ))}
-                </ul>
-              )}
+              <p className="text-xs text-gray-500">
+                予定の重なりは、このアプリに登録されている本人の予定だけで確認しています（施設の通常勤務や、担当になっていないMTへの出席は確認できません）。
+              </p>
               <p className="text-xs text-gray-500">保存すると、本部（シフト変更の通知先）へ通知メールを送ります。</p>
             </div>
             <div className="flex items-center justify-end gap-2 px-4 py-3 border-t flex-shrink-0">
@@ -409,6 +454,7 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
                     <input type="text" value={form.workOriginal} onChange={e => set('workOriginal', e.target.value)} className={inputCls} />
                   </div>
                 </div>
+                <DayWarnings warnings={workWarnings} testId="swap-warnings-work" />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>勤務内容 {req}</label>
@@ -456,6 +502,7 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
                     <input type="text" value={form.offOriginal} onChange={e => set('offOriginal', e.target.value)} className={inputCls} />
                   </div>
                 </div>
+                <DayWarnings warnings={offWarnings} testId="swap-warnings-off" />
                 <div>
                   <label className={labelCls}>施設（任意）</label>
                   <select value={form.offFacilityId} onChange={e => set('offFacilityId', e.target.value)} className={inputCls}>
@@ -481,14 +528,6 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
                 <label className={labelCls}>メモ</label>
                 <textarea value={form.memo} onChange={e => set('memo', e.target.value)} rows={2} className={inputCls} />
               </div>
-
-              {(warnings.length > 0) && (
-                <ul className="space-y-1" data-testid="swap-warnings">
-                  {warnings.map((w, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{w}</li>
-                  ))}
-                </ul>
-              )}
             </>
           )}
 
@@ -499,14 +538,19 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
         <div className="flex items-center justify-between gap-2 px-4 py-3 border-t flex-shrink-0">
           {editing && !done ? (
             confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-red-700">2日分とも取り消します。よろしいですか？</span>
-                <button onClick={handleDelete} disabled={saving}
-                  className="px-3 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60" data-testid="swap-delete-confirm">
-                  {saving ? '取消中…' : '取り消す'}
-                </button>
-                <button onClick={() => setConfirmDelete(false)} disabled={saving}
-                  className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">やめる</button>
+              // 取消の2段階目。スマートフォンでは文言の下にボタンを横いっぱいに並べ（やめる＝左、取り消す＝右）、PCでは1行に並べる
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3" data-testid="swap-delete-confirm-area">
+                <span className="text-sm font-medium text-red-700 sm:text-xs sm:font-normal sm:mr-auto">2日分とも取り消します。よろしいですか？</span>
+                <div className="flex gap-3 sm:gap-2">
+                  <button onClick={() => setConfirmDelete(false)} disabled={saving}
+                    className="flex-1 sm:flex-none whitespace-nowrap min-h-[44px] sm:min-h-0 px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    data-testid="swap-delete-cancel">やめる</button>
+                  <button onClick={handleDelete} disabled={saving}
+                    className="flex-1 sm:flex-none whitespace-nowrap min-h-[44px] sm:min-h-0 px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                    data-testid="swap-delete-confirm">
+                    {saving ? '取消中…' : '取り消す'}
+                  </button>
+                </div>
               </div>
             ) : (
               <button onClick={() => setConfirmDelete(true)} disabled={saving || loadingSwap}
