@@ -413,10 +413,13 @@ export function ShiftSwapFormModal({ isOpen, swapId, facilities, managers, staff
           ) : null}
           {loadingSwap || done ? null : (
             <>
-              <p className="flex items-start gap-1.5 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" data-testid="swap-description">
                 <Info size={13} className="flex-shrink-0 mt-0.5" />
-                公休日に急きょ出勤し（例：既に予定されているMTへの出席・本部業務・研修）、別の勤務日を休日にする申請です（他の人との交代はありません）。「休日出勤」「振休」とは別の区分として記録し、2日分を1件として登録・変更・取消します。
-              </p>
+                <div className="space-y-1.5">
+                  <p>公休日に出勤し（例：当月新しく予定されたMTへの出席・本部業務・研修など）、別の勤務日を休日にする申請です（他の人との交代がないもののみ）。</p>
+                  <p>「休日出勤」「振休」とは別の区分として記録し、2日分を1件として登録・変更・取消します。</p>
+                </div>
+              </div>
 
               {/* 対象者 */}
               <div>
