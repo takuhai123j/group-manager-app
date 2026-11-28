@@ -7,6 +7,7 @@ import { HelpButton } from '@/components/help/HelpButton'
 import type { CalendarView } from '@/lib/types'
 
 interface CalendarHeaderProps {
+  compactLayout?: boolean
   currentDate: Date
   view: CalendarView
   onPrev: () => void
@@ -48,7 +49,7 @@ function getMobileTitle(date: Date, view: CalendarView): string {
 }
 
 export function CalendarHeader({
-  currentDate, view,
+  currentDate, view, compactLayout = false,
   onPrev, onNext, onToday, onChangeView, onAddEvent,
   onOpenGroupManager, onOpenFacilityManager, onOpenShiftManager,
   onOpenLeaderManager, onOpenRounderManager, onOpenFieldEmployeeManager,
@@ -149,7 +150,7 @@ export function CalendarHeader({
         {/* シフト変更記録（スマホは「⋯」メニュー内） */}
         <button
           onClick={onOpenShiftChangeManager}
-          className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors"
+          className={cn('hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-orange-200 text-orange-600 text-sm hover:bg-orange-50 transition-colors', compactLayout && 'sm:hidden')}
           title="シフト変更記録"
         >
           <ArrowLeftRight size={15} />
@@ -159,7 +160,7 @@ export function CalendarHeader({
         {/* PDF資料（スマホは「⋯」メニュー内） */}
         <button
           onClick={onOpenShiftManager}
-          className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
+          className={cn('hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors', compactLayout && 'sm:hidden')}
           title="PDF資料"
         >
           <FileText size={15} />
@@ -169,7 +170,7 @@ export function CalendarHeader({
         {/* MT年間計画（スマホは「⋯」メニューの先頭） */}
         <button
           onClick={onOpenMeetingPlan}
-          className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-indigo-200 text-indigo-600 text-sm hover:bg-indigo-50 transition-colors"
+          className={cn('hidden sm:flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg border border-indigo-200 text-indigo-600 text-sm hover:bg-indigo-50 transition-colors', compactLayout && 'sm:hidden')}
           title="MT年間計画"
           aria-label="MT年間計画"
         >
@@ -178,7 +179,7 @@ export function CalendarHeader({
         </button>
 
         {/* 管理ドロップダウン - PC only */}
-        <div className="hidden sm:block relative" ref={menuRef}>
+        <div className={cn('hidden sm:block relative', compactLayout && 'sm:hidden')} ref={menuRef}>
           <button
             onClick={() => setMenuOpen(prev => !prev)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 text-sm hover:bg-gray-50 transition-colors"

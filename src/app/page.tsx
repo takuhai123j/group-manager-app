@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react'
 import { formatJa } from '@/lib/utils'
 import { useEvents } from '@/hooks/useEvents'
 import { useCalendar } from '@/hooks/useCalendar'
@@ -11,7 +11,7 @@ import { useManagerFacilities } from '@/hooks/useManagerFacilities'
 import { useAnnouncements } from '@/hooks/useAnnouncements'
 import { useShiftFiles } from '@/hooks/useShiftFiles'
 import { useMeetingPlan } from '@/hooks/useMeetingPlan'
-import { StaffTabs, type RoleTab, ALL_PERSON_ID } from '@/components/StaffTabs'
+import { MemberSidebar, type MemberGroup } from '@/components/MemberSidebar'
 import { CalendarHeader } from '@/components/calendar/CalendarHeader'
 import { FilterBar } from '@/components/calendar/FilterBar'
 import { MonthView } from '@/components/calendar/MonthView'
@@ -327,20 +327,36 @@ export default function HomePage() {
     setShowMigration(false)
   }
 
-  // ── 表示切替タブ ─────────────────────────────────────────────────
-  const [selectedRole, setSelectedRole] = useState<RoleTab>('all')
-  const [selectedPersonId, setSelectedPersonId] = useState<string>(ALL_PERSON_ID)
-
-  const handleRoleChange = useCallback((role: RoleTab) => {
-    setSelectedRole(role)
-    setSelectedPersonId(ALL_PERSON_ID)
+  // メンバー表示: null は全予定（未割当・無効化済みを含む現行の全員表示）
+  const [memberSelection, setMemberSelection] = useState<string[] | null>(null)
+  const [selectionReady, setSelectionReady] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMembersOpen, setMobileMembersOpen] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('schedule-member-selection-v1')
+      if (raw !== null) {
+        const value: unknown = JSON.parse(raw)
+        if (value === null || (Array.isArray(value) && value.every(x => typeof x === 'string'))) setMemberSelection(value)
+      }
+    } catch { /* ブラウザ設定により保存不可の場合も動作を続ける */ }
+    setSelectionReady(true)
   }, [])
+  useEffect(() => {
+    if (!selectionReady) return
+    try { localStorage.setItem('schedule-member-selection-v1', JSON.stringify(memberSelection)) } catch { /* 保存不可 */ }
+  }, [memberSelection, selectionReady])
 
-  const colorMode: ColorMode =
-    selectedRole === 'all' ||
-    (selectedRole === 'group_manager' && selectedPersonId === ALL_PERSON_ID)
-      ? 'leader'
-      : 'type'
+  const memberGroups = useMemo<MemberGroup[]>(() => [
+    { id: 'group_manager', label: 'G長・主任', members: activeManagers.map(m => ({ key: 'manager:' + m.id, id: m.id, kind: 'manager' as const, name: m.name, color: m.color })) },
+    { id: 'leader', label: 'リーダー', members: activeLeaders.map(m => ({ key: 'staff:' + m.id, id: m.id, kind: 'staff' as const, name: m.name, color: m.color })) },
+    { id: 'rounder', label: 'ラウンダー', members: activeRounders.map(m => ({ key: 'staff:' + m.id, id: m.id, kind: 'staff' as const, name: m.name, color: m.color })) },
+    { id: 'field_employee', label: '現場社員', members: activeFieldEmployees.map(m => ({ key: 'staff:' + m.id, id: m.id, kind: 'staff' as const, name: m.name, color: m.color })) },
+  ], [activeManagers, activeLeaders, activeRounders, activeFieldEmployees])
+  const selectedKeys = useMemo(() => memberSelection === null ? null : new Set(memberSelection), [memberSelection])
+  const selectedMembers = useMemo(() => memberGroups.flatMap(g => g.members).filter(m => selectedKeys === null || selectedKeys.has(m.key)), [memberGroups, selectedKeys])
+  const singleMember = memberSelection !== null && selectedMembers.length === 1 ? selectedMembers[0] : undefined
+  const colorMode: ColorMode = singleMember ? 'type' : 'leader'
 
   // ── モーダル状態 ─────────────────────────────────────────────────
   const [eventModalOpen, setEventModalOpen] = useState(false)
@@ -371,23 +387,13 @@ export default function HomePage() {
     () => [...leaderMembers, ...rounderMembers, ...fieldEmployeeMembers],
     [leaderMembers, rounderMembers, fieldEmployeeMembers]
   )
-  const staffRoleById = useMemo(
-    () => new Map(allStaffMembers.map(s => [s.id, s.role])),
-    [allStaffMembers]
-  )
-
-  // 職種タブ・人の絞り込み。
-  //   G長タブ              : G長・主任担当の予定のみ（スタッフ担当の予定は含めない）
-  //   リーダー・ラウンダー・現場社員タブ: その役職のスタッフ担当の予定を staff_member_id で照合
   const matchesPerson = useCallback((event: ScheduleEvent): boolean => {
-    if (selectedRole === 'all') return true
-    if (selectedRole === 'group_manager') {
-      if (!event.groupLeaderId) return false
-      return selectedPersonId === ALL_PERSON_ID || event.groupLeaderId === selectedPersonId
-    }
-    if (!event.staffMemberId || staffRoleById.get(event.staffMemberId) !== selectedRole) return false
-    return selectedPersonId === ALL_PERSON_ID || event.staffMemberId === selectedPersonId
-  }, [selectedRole, selectedPersonId, staffRoleById])
+    if (selectedKeys === null) return true
+    return Boolean(
+      (event.groupLeaderId && selectedKeys.has('manager:' + event.groupLeaderId)) ||
+      (event.staffMemberId && selectedKeys.has('staff:' + event.staffMemberId))
+    )
+  }, [selectedKeys])
 
   // 勤務・休日振替で非表示にした公休を除いた予定（カレンダー表示・件数・絞り込みはこちらを使う）
   const visibleEvents = useMemo(() => events.filter(e => !hiddenScheduleIds.has(e.id)), [events, hiddenScheduleIds])
@@ -462,14 +468,8 @@ export default function HomePage() {
     setEventModalOpen(false); setGroupManagerOpen(true)
   }, [])
 
-  const preselectedLeaderId =
-    selectedRole === 'group_manager' && selectedPersonId !== ALL_PERSON_ID
-      ? selectedPersonId
-      : undefined
-  const preselectedStaffMemberId =
-    selectedRole !== 'all' && selectedRole !== 'group_manager' && selectedPersonId !== ALL_PERSON_ID
-      ? selectedPersonId
-      : undefined
+  const preselectedLeaderId = singleMember?.kind === 'manager' ? singleMember.id : undefined
+  const preselectedStaffMemberId = singleMember?.kind === 'staff' ? singleMember.id : undefined
 
   // ── ローディング画面 ─────────────────────────────────────────────
   if (loading) {
@@ -495,7 +495,7 @@ export default function HomePage() {
   ) : null
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-[100dvh] bg-slate-50">
       {/* エラー・移行バナーは常に表示 */}
       {ErrorBanner}
       {showMigration && !migrationDone && (
@@ -512,18 +512,18 @@ export default function HomePage() {
       )}
 
       {/* App bar */}
-      <div className="bg-blue-700 text-white px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h1 className="text-sm sm:text-base font-bold leading-tight">イートハピネス総合スケジュール管理アプリ</h1>
-          <p className="text-xs text-blue-200 leading-tight hidden sm:block">
-            {formatJa(new Date(), 'yyyy年M月d日（EEE）')}
-          </p>
+      <div className="bg-blue-900 text-white px-3 py-2 flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <button type="button" onClick={() => setSidebarCollapsed(v => !v)} aria-label={sidebarCollapsed ? 'サイドバーを開く' : 'サイドバーを閉じる'} aria-expanded={!sidebarCollapsed} className="hidden lg:flex p-2 rounded-lg hover:bg-blue-800">
+            {sidebarCollapsed ? <PanelLeftOpen size={20}/> : <PanelLeftClose size={20}/>}
+          </button>
+          <button type="button" onClick={() => setMobileMembersOpen(v => !v)} aria-label="メニュー・メンバー" aria-expanded={mobileMembersOpen} className="lg:hidden flex p-2 rounded-lg hover:bg-blue-800"><Users size={19}/></button>
+          <CalendarDays size={20} className="hidden sm:block shrink-0 text-blue-200"/>
+          <h1 className="text-sm sm:text-base font-bold truncate">イートハピネス総合スケジュール管理アプリ</h1>
         </div>
-        <div className="text-xs text-blue-200 text-right">
-          <p>全{visibleEvents.length}件</p>
-          {(selectedRole !== 'all' || selectedPersonId !== ALL_PERSON_ID || filters.types.length > 0 || filters.facilities.length > 0) && (
-            <p className="text-blue-300">表示{filteredEvents.length}件</p>
-          )}
+        <div className="flex items-center gap-3 text-xs text-blue-100 whitespace-nowrap">
+          <span className="hidden md:inline">{formatJa(new Date(), 'yyyy年M月d日（EEE）')}</span>
+          <span>{memberSelection === null && !isFilterActive ? '全' + visibleEvents.length + '件' : '表示' + filteredEvents.length + '件'}</span>
         </div>
       </div>
 
@@ -533,20 +533,27 @@ export default function HomePage() {
         onOpenAdmin={() => setAnnouncementAdminOpen(true)}
       />
 
-      {/* 職種タブ + 個人タブ */}
-      <StaffTabs
-        selectedRole={selectedRole}
-        selectedPersonId={selectedPersonId}
-        activeManagers={activeManagers}
-        activeLeaders={activeLeaders}
-        activeRounders={activeRounders}
-        activeFieldEmployees={activeFieldEmployees}
-        onRoleChange={handleRoleChange}
-        onPersonChange={setSelectedPersonId}
-      />
-
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 min-w-0">
+        <div className={(mobileMembersOpen ? 'block max-h-[55dvh]' : 'hidden') + (sidebarCollapsed ? ' lg:hidden' : ' lg:block lg:max-h-none') + ' lg:w-60 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 min-h-0 overflow-hidden'}>
+          <MemberSidebar groups={memberGroups} selection={memberSelection} onChange={setMemberSelection}
+            onMeeting={() => setMeetingPlanOpen(true)}
+            onShiftChange={() => setShiftChangeManagerOpen(true)}
+            onDocuments={() => setShiftManagerOpen(true)}
+            onCloseMobile={() => setMobileMembersOpen(false)}
+            adminItems={[
+              { label: 'G長・主任管理', onClick: openGroupManager },
+              { label: 'リーダー管理', onClick: () => setLeaderManagerOpen(true) },
+              { label: 'ラウンダー管理', onClick: () => setRounderManagerOpen(true) },
+              { label: '現場社員管理', onClick: () => setFieldEmployeeManagerOpen(true) },
+              { label: '施設管理', onClick: openFacilityManager },
+              { label: 'お知らせ管理', onClick: () => setAnnouncementAdminOpen(true) },
+            ]}
+          />
+        </div>
+        <div className="flex flex-col flex-1 min-h-0 min-w-0">
       {/* Calendar header */}
       <CalendarHeader
+        compactLayout={!sidebarCollapsed}
         currentDate={currentDate}
         view={view}
         onPrev={navigatePrev}
@@ -631,6 +638,8 @@ export default function HomePage() {
           />
         )}
       </main>
+        </div>
+      </div>
 
       {/* Event modal */}
       <EventModal
